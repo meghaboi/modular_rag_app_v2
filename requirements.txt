@@ -1,0 +1,25 @@
+# Core dependencies
+streamlit>=1.28.0
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Vector database
+faiss-cpu>=1.7.4
+
+# LangChain components
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-cohere>=0.0.1
+langchain-google-genai>=0.0.5
+
+# API clients
+openai>=1.5.0
+cohere>=4.37
+google-generativeai>=0.3.0
+
+# Text processing
+tiktoken>=0.5.1
+sentence-transformers>=2.2.2
+torch>=1.13.0
+
+pymilvus>=2.3.0
