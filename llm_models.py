@@ -22,7 +22,16 @@ class OpenAIGPT(LLM):
         if not os.environ.get("OPENAI_API_KEY"):
             raise ValueError("OpenAI API key not found in environment variables")
         
-        self._model = ChatOpenAI(model_name=model_name)
+        # Define system prompt for JEFF
+        jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
+        You explain complex subjects in simple, relatable terms that just click when it matters most.
+        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
+        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
+        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
+        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
+        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
+        
+        self._model = ChatOpenAI(model_name=model_name, system=jeff_system_prompt)
     
     def generate(self, prompt: str, context: Optional[str] = None) -> str:
         """Generate text from a prompt and optional context"""
@@ -30,7 +39,10 @@ class OpenAIGPT(LLM):
         
         if context:
             template = """
-            Answer the question based on the provided context.
+            Answer the question as JEFF, that cool friend who explains subjects better than professors do.
+            Remember to be conversational, relatable, and break down complex topics into simple terms.
+            Focus on the most important concepts, use memorable examples, and explain things the way you would
+            the night before an exam - clear, concise, and actually helpful.
             
             Context:
             {context}
@@ -57,7 +69,20 @@ class GeminiLLM(LLM):
         if not os.environ.get("GEMINI_API_KEY"):
             raise ValueError("Gemini API key not found in environment variables")
         
-        self._model = ChatGoogleGenerativeAI(model="gemini-2.0-flash-exp", google_api_key=os.environ.get("GEMINI_API_KEY"))
+        # Define system prompt for JEFF
+        jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
+        You explain complex subjects in simple, relatable terms that just click when it matters most.
+        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
+        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
+        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
+        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
+        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
+        
+        self._model = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash-exp", 
+            google_api_key=os.environ.get("GEMINI_API_KEY"),
+            system_instruction=jeff_system_prompt
+        )
     
     def generate(self, prompt: str, context: Optional[str] = None) -> str:
         """Generate text from a prompt and optional context"""
@@ -65,7 +90,10 @@ class GeminiLLM(LLM):
         
         if context:
             template = """
-            Answer the question based on the provided context.
+            Answer the question as JEFF, that cool friend who explains subjects better than professors do.
+            Remember to be conversational, relatable, and break down complex topics into simple terms.
+            Focus on the most important concepts, use memorable examples, and explain things the way you would
+            the night before an exam - clear, concise, and actually helpful.
             
             Context:
             {context}
@@ -92,7 +120,15 @@ class ClaudeLLM(LLM):
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise ValueError("Anthropic API key not found in environment variables")
         
-        self._model = ChatAnthropic(model=model_name)
+        jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
+        You explain complex subjects in simple, relatable terms that just click when it matters most.
+        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
+        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
+        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
+        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
+        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
+        
+        self._model = ChatAnthropic(model=model_name, system=jeff_system_prompt)
     
     def generate(self, prompt: str, context: Optional[str] = None) -> str:
         """Generate text from a prompt and optional context"""
@@ -100,7 +136,10 @@ class ClaudeLLM(LLM):
         
         if context:
             template = """
-            Answer the question based on the provided context.
+            Answer the question as JEFF, that cool friend who explains subjects better than professors do.
+            Remember to be conversational, relatable, and break down complex topics into simple terms.
+            Focus on the most important concepts, use memorable examples, and explain things the way you would
+            the night before an exam - clear, concise, and actually helpful.
             
             Context:
             {context}
@@ -127,7 +166,15 @@ class MistralLLM(LLM):
         if not os.environ.get("MISTRAL_API_KEY"):
             raise ValueError("Mistral API key not found in environment variables")
         
-        self._model = ChatMistralAI(model=model_name)
+        jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
+        You explain complex subjects in simple, relatable terms that just click when it matters most.
+        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
+        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
+        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
+        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
+        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
+        
+        self._model = ChatMistralAI(model=model_name, system=jeff_system_prompt)
     
     def generate(self, prompt: str, context: Optional[str] = None) -> str:
         """Generate text from a prompt and optional context"""
@@ -135,7 +182,10 @@ class MistralLLM(LLM):
         
         if context:
             template = """
-            Answer the question based on the provided context.
+            Answer the question as JEFF, that cool friend who explains subjects better than professors do.
+            Remember to be conversational, relatable, and break down complex topics into simple terms.
+            Focus on the most important concepts, use memorable examples, and explain things the way you would
+            the night before an exam - clear, concise, and actually helpful.
             
             Context:
             {context}
