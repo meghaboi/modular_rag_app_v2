@@ -26,3 +26,5 @@ pymilvus>=2.3.0
 mistralai>=1.7.0
 
 rank-bm25>=0.2.2
+
+gTTS>=2.2.4
