@@ -214,7 +214,6 @@ def initialize_pipeline(file_path, embedding_model_enum, vector_store_enum, rera
         if st.session_state.mode == "evaluation":
             IsInEvaluationMode = True
 
-        breakpoint()
         # Create RAG pipeline
         pipeline = RAGPipeline(
             embedding_model=embedding_model_instance,
