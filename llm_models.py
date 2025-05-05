@@ -8,7 +8,7 @@ class LLM(ABC):
     """Abstract base class for LLM models following Interface Segregation Principle"""
     
     @abstractmethod
-    def generate(self, prompt: str, context: Optional[str] = None) -> str:
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
         pass
 
@@ -31,33 +31,52 @@ class OpenAIGPT(LLM):
         You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
         Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
         
-        self._model = ChatOpenAI(model_name=model_name, system=jeff_system_prompt)
+        self._model = ChatOpenAI(model_name=model_name)
+        self._jeff_system_prompt = jeff_system_prompt
     
-    def generate(self, prompt: str, context: Optional[str] = None) -> str:
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
         from langchain.prompts import ChatPromptTemplate
         
-        if context:
-            template = """
-            Answer the question as JEFF, that cool friend who explains subjects better than professors do.
-            Remember to be conversational, relatable, and break down complex topics into simple terms.
-            Focus on the most important concepts, use memorable examples, and explain things the way you would
-            the night before an exam - clear, concise, and actually helpful.
-            
-            Context:
-            {context}
-            
-            Question:
-            {question}
-            
-            Answer:
-            """
-            prompt_template = ChatPromptTemplate.from_template(template)
-            chain = prompt_template | self._model
-            response = chain.invoke({"context": context, "question": prompt})
-            return response.content
+        # In evaluation mode, don't use system prompt or JEFF persona
+        if evaluation_mode:
+            if context:
+                template = """
+                Context:
+                {context}
+                
+                Question:
+                {question}
+                
+                Answer:
+                """
+            else:
+                return self._model.invoke(prompt).content
         else:
-            return self._model.invoke(prompt).content
+            # Set system prompt for non-evaluation mode
+            self._model.system = self._jeff_system_prompt
+            if context:
+                template = """
+                Answer the question as JEFF, that cool friend who explains subjects better than professors do.
+                Remember to be conversational, relatable, and break down complex topics into simple terms.
+                Focus on the most important concepts, use memorable examples, and explain things the way you would
+                the night before an exam - clear, concise, and actually helpful.
+                
+                Context:
+                {context}
+                
+                Question:
+                {question}
+                
+                Answer:
+                """
+            else:
+                return self._model.invoke(prompt).content
+        
+        prompt_template = ChatPromptTemplate.from_template(template)
+        chain = prompt_template | self._model
+        response = chain.invoke({"context": context, "question": prompt})
+        return response.content
 
 class GeminiLLM(LLM):
     """Google Gemini model implementation"""
@@ -80,35 +99,53 @@ class GeminiLLM(LLM):
         
         self._model = ChatGoogleGenerativeAI(
             model="gemini-2.0-flash-exp", 
-            google_api_key=os.environ.get("GEMINI_API_KEY"),
-            system_instruction=jeff_system_prompt
+            google_api_key=os.environ.get("GEMINI_API_KEY")
         )
+        self._jeff_system_prompt = jeff_system_prompt
     
-    def generate(self, prompt: str, context: Optional[str] = None) -> str:
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
         from langchain.prompts import ChatPromptTemplate
         
-        if context:
-            template = """
-            Answer the question as JEFF, that cool friend who explains subjects better than professors do.
-            Remember to be conversational, relatable, and break down complex topics into simple terms.
-            Focus on the most important concepts, use memorable examples, and explain things the way you would
-            the night before an exam - clear, concise, and actually helpful.
-            
-            Context:
-            {context}
-            
-            Question:
-            {question}
-            
-            Answer:
-            """
-            prompt_template = ChatPromptTemplate.from_template(template)
-            chain = prompt_template | self._model
-            response = chain.invoke({"context": context, "question": prompt})
-            return response.content
+        # In evaluation mode, don't use system prompt or JEFF persona
+        if evaluation_mode:
+            if context:
+                template = """
+                Context:
+                {context}
+                
+                Question:
+                {question}
+                
+                Answer:
+                """
+            else:
+                return self._model.invoke(prompt).content
         else:
-            return self._model.invoke(prompt).content
+            # Set system prompt for non-evaluation mode
+            self._model.system_instruction = self._jeff_system_prompt
+            if context:
+                template = """
+                Answer the question as JEFF, that cool friend who explains subjects better than professors do.
+                Remember to be conversational, relatable, and break down complex topics into simple terms.
+                Focus on the most important concepts, use memorable examples, and explain things the way you would
+                the night before an exam - clear, concise, and actually helpful.
+                
+                Context:
+                {context}
+                
+                Question:
+                {question}
+                
+                Answer:
+                """
+            else:
+                return self._model.invoke(prompt).content
+        
+        prompt_template = ChatPromptTemplate.from_template(template)
+        chain = prompt_template | self._model
+        response = chain.invoke({"context": context, "question": prompt})
+        return response.content
 
 class ClaudeLLM(LLM):
     """Anthropic Claude model implementation"""
@@ -128,33 +165,52 @@ class ClaudeLLM(LLM):
         You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
         Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
         
-        self._model = ChatAnthropic(model=model_name, system=jeff_system_prompt)
+        self._model = ChatAnthropic(model=model_name)
+        self._jeff_system_prompt = jeff_system_prompt
     
-    def generate(self, prompt: str, context: Optional[str] = None) -> str:
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
         from langchain.prompts import ChatPromptTemplate
         
-        if context:
-            template = """
-            Answer the question as JEFF, that cool friend who explains subjects better than professors do.
-            Remember to be conversational, relatable, and break down complex topics into simple terms.
-            Focus on the most important concepts, use memorable examples, and explain things the way you would
-            the night before an exam - clear, concise, and actually helpful.
-            
-            Context:
-            {context}
-            
-            Question:
-            {question}
-            
-            Answer:
-            """
-            prompt_template = ChatPromptTemplate.from_template(template)
-            chain = prompt_template | self._model
-            response = chain.invoke({"context": context, "question": prompt})
-            return response.content
+        # In evaluation mode, don't use system prompt or JEFF persona
+        if evaluation_mode:
+            if context:
+                template = """
+                Context:
+                {context}
+                
+                Question:
+                {question}
+                
+                Answer:
+                """
+            else:
+                return self._model.invoke(prompt).content
         else:
-            return self._model.invoke(prompt).content
+            # Set system prompt for non-evaluation mode
+            self._model.system = self._jeff_system_prompt
+            if context:
+                template = """
+                Answer the question as JEFF, that cool friend who explains subjects better than professors do.
+                Remember to be conversational, relatable, and break down complex topics into simple terms.
+                Focus on the most important concepts, use memorable examples, and explain things the way you would
+                the night before an exam - clear, concise, and actually helpful.
+                
+                Context:
+                {context}
+                
+                Question:
+                {question}
+                
+                Answer:
+                """
+            else:
+                return self._model.invoke(prompt).content
+        
+        prompt_template = ChatPromptTemplate.from_template(template)
+        chain = prompt_template | self._model
+        response = chain.invoke({"context": context, "question": prompt})
+        return response.content
 
 class MistralLLM(LLM):
     """Mistral model implementation"""
@@ -174,33 +230,52 @@ class MistralLLM(LLM):
         You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
         Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
         
-        self._model = ChatMistralAI(model=model_name, system=jeff_system_prompt)
+        self._model = ChatMistralAI(model=model_name)
+        self._jeff_system_prompt = jeff_system_prompt
     
-    def generate(self, prompt: str, context: Optional[str] = None) -> str:
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
         from langchain.prompts import ChatPromptTemplate
         
-        if context:
-            template = """
-            Answer the question as JEFF, that cool friend who explains subjects better than professors do.
-            Remember to be conversational, relatable, and break down complex topics into simple terms.
-            Focus on the most important concepts, use memorable examples, and explain things the way you would
-            the night before an exam - clear, concise, and actually helpful.
-            
-            Context:
-            {context}
-            
-            Question:
-            {question}
-            
-            Answer:
-            """
-            prompt_template = ChatPromptTemplate.from_template(template)
-            chain = prompt_template | self._model
-            response = chain.invoke({"context": context, "question": prompt})
-            return response.content
+        # In evaluation mode, don't use system prompt or JEFF persona
+        if evaluation_mode:
+            if context:
+                template = """
+                Context:
+                {context}
+                
+                Question:
+                {question}
+                
+                Answer:
+                """
+            else:
+                return self._model.invoke(prompt).content
         else:
-            return self._model.invoke(prompt).content
+            # Set system prompt for non-evaluation mode
+            self._model.system = self._jeff_system_prompt
+            if context:
+                template = """
+                Answer the question as JEFF, that cool friend who explains subjects better than professors do.
+                Remember to be conversational, relatable, and break down complex topics into simple terms.
+                Focus on the most important concepts, use memorable examples, and explain things the way you would
+                the night before an exam - clear, concise, and actually helpful.
+                
+                Context:
+                {context}
+                
+                Question:
+                {question}
+                
+                Answer:
+                """
+            else:
+                return self._model.invoke(prompt).content
+        
+        prompt_template = ChatPromptTemplate.from_template(template)
+        chain = prompt_template | self._model
+        response = chain.invoke({"context": context, "question": prompt})
+        return response.content
 
 class LLMFactory:
     """Factory for creating LLM models (Factory Pattern)"""

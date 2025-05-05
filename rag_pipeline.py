@@ -524,7 +524,8 @@ class RAGPipeline:
     
     def __init__(self, embedding_model: EmbeddingModel, vector_store: VectorStore, 
                  llm: LLM, reranker: Optional[Reranker] = None, top_k: int = 3,
-                 chunking_strategy: Optional[ChunkingStrategy] = None):
+                 chunking_strategy: Optional[ChunkingStrategy] = None,
+                 evaluation_mode: bool = False):
         """Initialize the RAG pipeline with the selected components"""
         self._embedding_model = embedding_model
         self._vector_store = vector_store
@@ -533,6 +534,7 @@ class RAGPipeline:
         self._top_k = top_k
         self._documents = []
         self._chunking_strategy = chunking_strategy or ParagraphChunking()
+        self._evaluation_mode = evaluation_mode
     
     def index_documents(self, file_path: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> None:
         """Index documents from a file"""
@@ -574,6 +576,6 @@ class RAGPipeline:
         context = "\n\n".join(retrieved_texts)
         
         # Generate response
-        response = self._llm.generate(query, context)
+        response = self._llm.generate(query, context, evaluation_mode=self._evaluation_mode)
         
         return response, retrieved_texts

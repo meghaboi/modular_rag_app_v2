@@ -216,7 +216,8 @@ def initialize_pipeline(file_path, embedding_model_enum, vector_store_enum, rera
             reranker=reranker_instance,
             llm=llm_instance,
             top_k=top_k,
-            chunking_strategy=chunking_strategy_instance
+            chunking_strategy=chunking_strategy_instance,
+            evaluation_mode=False 
         )
 
         # Index documents
@@ -272,7 +273,8 @@ def run_pipeline_with_config(
             reranker=reranker_instance,
             llm=llm_instance,
             top_k=top_k,
-            chunking_strategy=chunking_strategy_instance
+            chunking_strategy=chunking_strategy_instance,
+            evaluation_mode=True 
         )
 
         # Indexing (re-index per config for isolation in eval)
