@@ -56,6 +56,7 @@ DEFAULT_CHUNK_OVERLAP = 195
 DEFAULT_TOP_K = 4
 DEFAULT_HYBRID_ALPHA = 0.5 # Default even if not always used
 
+IsInEvaluationMode = False
 # --- Initialize Session State ---
 # Make sure Optional is here
 if 'messages' not in st.session_state:
@@ -209,6 +210,11 @@ def initialize_pipeline(file_path, embedding_model_enum, vector_store_enum, rera
         llm_instance = LLMFactory.create_llm(llm_enum) # Assuming LLMFactory handles persona if needed, or RAGPipeline does
         chunking_strategy_instance = ChunkingStrategyFactory.get_strategy(chunking_strategy_enum.value)
 
+        IsInEvaluationMode = False
+        if st.session_state.mode == "evaluation":
+            IsInEvaluationMode = True
+
+        breakpoint()
         # Create RAG pipeline
         pipeline = RAGPipeline(
             embedding_model=embedding_model_instance,
@@ -217,7 +223,7 @@ def initialize_pipeline(file_path, embedding_model_enum, vector_store_enum, rera
             llm=llm_instance,
             top_k=top_k,
             chunking_strategy=chunking_strategy_instance,
-            evaluation_mode=False 
+            evaluation_mode=IsInEvaluationMode 
         )
 
         # Index documents
@@ -274,7 +280,7 @@ def run_pipeline_with_config(
             llm=llm_instance,
             top_k=top_k,
             chunking_strategy=chunking_strategy_instance,
-            evaluation_mode=True 
+            evaluation_mode=IsInEvaluationMode 
         )
 
         # Indexing (re-index per config for isolation in eval)
@@ -644,6 +650,7 @@ def display_chat_interface():
 
 
 def display_evaluation_interface():
+
     st.header("🧪 RAG Evaluation Mode")
     st.markdown("Let's test out different setups. Give me a question and the perfect answer (ground truth) to see how well various RAG configurations perform.")
 
@@ -908,10 +915,12 @@ def display_settings_panel():
     # Configuration Options Expander
     st.sidebar.markdown("---")
     if st.session_state.mode == "evaluation":
+        IsInEvaluationMode = True
         st.sidebar.header("🛠️ Evaluation Config")
         st.sidebar.info("Adjust settings for Evaluation Mode. Press 'Initialize JEFF' after changing.")
         config_expander_expanded = True
     else: # Chat mode
+        IsInEvaluationMode = False
         st.sidebar.header("⚙️ Current Setup")
         st.sidebar.info("JEFF uses this setup. Switch to Evaluation Mode to change.")
         config_expander_expanded = False

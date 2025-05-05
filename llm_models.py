@@ -165,15 +165,18 @@ class ClaudeLLM(LLM):
         You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
         Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
         
-        self._model = ChatAnthropic(model=model_name)
+        self._model = ChatAnthropic(model=model_name, system=jeff_system_prompt)
         self._jeff_system_prompt = jeff_system_prompt
     
     def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
         from langchain.prompts import ChatPromptTemplate
-        
         # In evaluation mode, don't use system prompt or JEFF persona
         if evaluation_mode:
+            # Create a new model instance without the system prompt
+            from langchain_anthropic import ChatAnthropic
+            evaluation_model = ChatAnthropic(model=self._model.model)
+        
             if context:
                 template = """
                 Context:
@@ -184,11 +187,13 @@ class ClaudeLLM(LLM):
                 
                 Answer:
                 """
+                prompt_template = ChatPromptTemplate.from_template(template)
+                chain = prompt_template | evaluation_model
+                response = chain.invoke({"context": context, "question": prompt})
+                return response.content
             else:
-                return self._model.invoke(prompt).content
+                return evaluation_model.invoke(prompt).content
         else:
-            # Set system prompt for non-evaluation mode
-            self._model.system = self._jeff_system_prompt
             if context:
                 template = """
                 Answer the question as JEFF, that cool friend who explains subjects better than professors do.
@@ -204,13 +209,12 @@ class ClaudeLLM(LLM):
                 
                 Answer:
                 """
+                prompt_template = ChatPromptTemplate.from_template(template)
+                chain = prompt_template | self._model
+                response = chain.invoke({"context": context, "question": prompt})
+                return response.content
             else:
                 return self._model.invoke(prompt).content
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | self._model
-        response = chain.invoke({"context": context, "question": prompt})
-        return response.content
 
 class MistralLLM(LLM):
     """Mistral model implementation"""
