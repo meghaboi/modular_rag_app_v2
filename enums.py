@@ -30,6 +30,8 @@ class RerankerModelType(Enum):
     COHERE_MULTILINGUAL = "Cohere-Multilingual"
     VOYAGE = "Voyage"
     VOYAGE_2 = "Voyage-2"
+    JINA = "Jina"
+    JINA_V2 = "Jina-v2"
     
     @classmethod
     def list(cls) -> List[str]:

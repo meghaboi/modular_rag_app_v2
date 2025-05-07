@@ -157,7 +157,7 @@ def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_e
 
     if gemini_needed:
         key_name = "Gemini API Key"
-        is_available = bool(os.getenv("GOOGLE_API_KEY")) # Often GOOGLE_API_KEY for Gemini
+        is_available = bool(os.getenv("GEMINI_API_KEY"))
         api_keys_status[key_name] = "Available" if is_available else "Missing"
         if not is_available: missing_keys_list.append(key_name)
 
@@ -860,8 +860,8 @@ def display_evaluation_interface():
 
 
 def display_settings_panel():
-    st.sidebar.image("https://www.nicepng.com/png/detail/972-9721863_raising-hand-icon-png.png", width=80)
-    st.sidebar.title("JEFF's Controls")
+    st.sidebar.image("https://i.postimg.cc/DfLpxwZJ/Chat-GPT-Image-May-7-2025-11-10-13-AM.png", width=80)
+    st.sidebar.title("Ask-JEFF")
 
     # Mode selector
     mode_options = {"💬 Chat with JEFF": "chat", "🧪 Test Setups (Evaluation)": "evaluation"}
