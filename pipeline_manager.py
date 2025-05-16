@@ -155,7 +155,7 @@ def run_pipeline_with_config(
                 }
             }
 
-        # Run query and get response
+        # Run query and get non-streaming response
         response = pipeline.run(user_query)
         
         # Get evaluation metrics if ground truth is provided

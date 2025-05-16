@@ -479,6 +479,7 @@ def display_chat_interface():
              "elapsed_time": None
          })
 
+    # Display message history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             if message["role"] == "assistant":
@@ -548,60 +549,99 @@ def display_chat_interface():
             })
             st.stop()
 
-        with st.spinner("JEFF's thinking... 🤔"):
+        # Start streaming response process
+        with st.chat_message("assistant"):
+            start_time = time.time()
+            
             try:
-                start_time = time.time()
-                logging.info("Processing query with RAG pipeline...")
-                response, contexts = st.session_state.pipeline.process_query(user_query)
+                logging.info("Fetching contexts from vector store...")
+                # Use the new retrieve_context method from RAGPipeline
+                contexts = st.session_state.pipeline.retrieve_context(user_query)
+                
+                # Display streaming placeholder with tabs
+                tab_labels_stream = ["📖 Read Response", "🔊 Hear Response"]
+                tab_stream_text, tab_stream_audio = st.tabs(tab_labels_stream)
+                
+                with tab_stream_text:
+                    # This will be replaced with streamed content
+                    stream_placeholder = st.empty()
+                
+                with tab_stream_audio:
+                    audio_placeholder = st.empty()
+                    audio_placeholder.info("Audio will be available when response is complete.")
+                
+                logging.info("Starting streaming generation...")
+                full_response = ""
+                
+                # Use the new stream_run method from RAGPipeline
+                for chunk in st.session_state.pipeline.stream_run(user_query):
+                    full_response += chunk
+                    # Update the UI with each chunk
+                    with tab_stream_text:
+                        stream_placeholder.markdown(full_response + "▌")
+                
+                # Replace the blinking cursor with the final response
+                with tab_stream_text:
+                    stream_placeholder.markdown(full_response)
+                
                 elapsed_time = time.time() - start_time
-                logging.info(f"Query processed successfully in {elapsed_time:.2f}s.")
-
-                logging.info("Generating TTS audio for the response...")
+                st.write(f"_(JEFF cooked that up in {elapsed_time:.2f} seconds)_")
+                
+                # Generate audio after completion for the full response
+                logging.info("Generating TTS audio for the complete response...")
                 tts_start_time = time.time()
-                audio_bytes = text_to_speech(response) 
+                audio_bytes = text_to_speech(full_response)
                 tts_elapsed_time = time.time() - tts_start_time
+                
                 log_msg = f"TTS generation {'succeeded' if audio_bytes else 'failed/skipped'} in {tts_elapsed_time:.2f}s."
-                if audio_bytes: logging.info(log_msg)
-                else: logging.warning(log_msg)
-
-                with st.chat_message("assistant"):
-                    tab_labels_resp = ["📖 Read Response", "🔊 Hear Response"]
-                    tab_resp_text, tab_resp_audio = st.tabs(tab_labels_resp)
-
-                    with tab_resp_text: st.write(response)
-                    with tab_resp_audio:
-                        if audio_bytes: st.audio(audio_bytes, format="audio/mp3")
-                        else: st.info("Audio playback is not available for this message.")
-
-                    st.write(f"_(JEFF cooked that up in {elapsed_time:.2f} seconds)_")
-                    if st.session_state.show_contexts and contexts:
-                         with st.expander("🧠 Check out the textbook bits I used:"):
-                            for i, context in enumerate(contexts):
-                                st.markdown(f"**Snippet {i+1}:**")
-                                st.text(context)
-
+                if audio_bytes: 
+                    logging.info(log_msg)
+                    with tab_stream_audio:
+                        audio_placeholder.audio(audio_bytes, format="audio/mp3")
+                else: 
+                    logging.warning(log_msg)
+                    with tab_stream_audio:
+                        audio_placeholder.info("Audio playback is not available for this message.")
+                
+                # Show context if enabled
+                if st.session_state.show_contexts and contexts:
+                    with st.expander("🧠 Check out the textbook bits I used:"):
+                        for i, context in enumerate(contexts):
+                            st.markdown(f"**Snippet {i+1}:**")
+                            st.text(context)
+                
+                # Save the message to history
                 st.session_state.messages.append({
-                    "role": "assistant", "content": response, "contexts": contexts,
-                    "elapsed_time": elapsed_time, "audio": audio_bytes
+                    "role": "assistant", 
+                    "content": full_response, 
+                    "contexts": contexts,
+                    "elapsed_time": elapsed_time, 
+                    "audio": audio_bytes
                 })
-                st.rerun() 
-
+                
             except Exception as e:
                 logging.error(f"Error processing query or generating audio: {e}", exc_info=True)
                 error_msg = f"Oof, hit a snag trying to answer that. Maybe try rephrasing? Error: {str(e)}"
                 error_audio = text_to_speech(error_msg)
-
-                with st.chat_message("assistant"):
-                    tab_labels_err = ["📖 Read Error", "🔊 Hear Error"]
-                    tab_err_text, tab_err_audio = st.tabs(tab_labels_err)
-                    with tab_err_text: st.error(error_msg, icon="🔥")
-                    with tab_err_audio:
-                        if error_audio: st.audio(error_audio, format="audio/mp3")
-                        else: st.info("Audio playback not available.")
-
+                
+                tab_labels_err = ["📖 Read Error", "🔊 Hear Error"]
+                tab_err_text, tab_err_audio = st.tabs(tab_labels_err)
+                
+                with tab_err_text: 
+                    st.error(error_msg, icon="🔥")
+                
+                with tab_err_audio:
+                    if error_audio: 
+                        st.audio(error_audio, format="audio/mp3")
+                    else: 
+                        st.info("Audio playback not available.")
+                
                 st.session_state.messages.append({
-                    "role": "assistant", "content": error_msg, "audio": error_audio,
-                    "contexts": [], "elapsed_time": None
+                    "role": "assistant", 
+                    "content": error_msg, 
+                    "audio": error_audio,
+                    "contexts": [], 
+                    "elapsed_time": None
                 })
 
 

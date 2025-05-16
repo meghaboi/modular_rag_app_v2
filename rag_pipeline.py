@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional, Tuple, Callable
 from embedding_models import EmbeddingModel
 from rerankers import Reranker
 from vector_stores import VectorStore
-from llm_models import LLM
+from llm_models import StreamingLLM
 import re
 from abc import ABC, abstractmethod
 
@@ -520,21 +520,27 @@ class ChunkingStrategyFactory:
         }
 
 class RAGPipeline:
-    """RAG Pipeline that combines all components"""
+    """RAG Pipeline that combines all components with streaming support"""
     
-    def __init__(self, embedding_model: EmbeddingModel, vector_store: VectorStore, 
-                 llm: LLM, reranker: Optional[Reranker] = None, top_k: int = 3,
-                 chunking_strategy: Optional[ChunkingStrategy] = None,
-                 evaluation_mode: bool = False):
+    def __init__(self, embedding_model, vector_store, 
+                 llm, reranker=None, top_k=3,
+                 chunking_strategy=None, chunk_size=1000, 
+                 chunk_overlap=200, evaluation_mode=False):
         """Initialize the RAG pipeline with the selected components"""
-        self._embedding_model = embedding_model
-        self._vector_store = vector_store
-        self._reranker = reranker
-        self._llm = llm
-        self._top_k = top_k
-        self._documents = []
-        self._chunking_strategy = chunking_strategy or ParagraphChunking()
-        self._evaluation_mode = evaluation_mode
+        self.embedding_model = embedding_model
+        self.vector_store = vector_store
+        self.reranker = reranker
+        self.llm = llm
+        self.top_k = top_k
+        self.documents = []
+        self.chunking_strategy = chunking_strategy
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.evaluation_mode = evaluation_mode
+    
+    def initialize(self, file_path: str) -> None:
+        """Initialize the pipeline with a document file"""
+        self.index_documents(file_path, self.chunk_size, self.chunk_overlap)
     
     def index_documents(self, file_path: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> None:
         """Index documents from a file"""
@@ -543,39 +549,57 @@ class RAGPipeline:
             text = f.read()
         
         # Split text into chunks using the selected strategy
-        chunks = self._chunking_strategy.chunk_text(text, chunk_size, chunk_overlap)
-        self._documents = chunks
+        chunks = self.chunking_strategy.chunk_text(text, chunk_size, chunk_overlap)
+        self.documents = chunks
         
         # Get embeddings for chunks
-        embeddings = self._embedding_model.embed_documents(chunks)
+        embeddings = self.embedding_model.embed_documents(chunks)
         
         # Add chunks to vector store
-        self._vector_store.add_documents(chunks, embeddings)
+        self.vector_store.add_documents(chunks, embeddings)
     
-    def process_query(self, query: str) -> Tuple[str, List[str]]:
-        """Process a query and return the response and retrieved contexts"""
+    def retrieve_context(self, query: str) -> list:
+        """Retrieve relevant contexts for a given query"""
         # Get query embedding
-        query_embedding = self._embedding_model.embed_query(query)
+        query_embedding = self.embedding_model.embed_query(query)
         
         # Retrieve documents - check if vector store supports hybrid search
-        if hasattr(self._vector_store, 'search') and 'query' in self._vector_store.search.__code__.co_varnames:
+        if hasattr(self.vector_store, 'search') and 'query' in self.vector_store.search.__code__.co_varnames:
             # Vector store supports hybrid search
-            retrieved_docs = self._vector_store.search(query_embedding, self._top_k, query=query)
+            retrieved_docs = self.vector_store.search(query_embedding, self.top_k, query=query)
         else:
             # Standard vector search
-            retrieved_docs = self._vector_store.search(query_embedding, self._top_k)
+            retrieved_docs = self.vector_store.search(query_embedding, self.top_k)
             
         retrieved_texts = [doc[0] for doc in retrieved_docs]
         
         # Apply reranking if available
-        if self._reranker and retrieved_texts:
-            reranked_docs = self._reranker.rerank(query, retrieved_texts)
+        if self.reranker and retrieved_texts:
+            reranked_docs = self.reranker.rerank(query, retrieved_texts)
             retrieved_texts = [doc[0] for doc in reranked_docs]
+        
+        return retrieved_texts
+    
+    def run(self, query: str) -> str:
+        """Process a query and return the response (non-streaming)"""
+        # Get context
+        retrieved_texts = self.retrieve_context(query)
         
         # Combine retrieved documents
         context = "\n\n".join(retrieved_texts)
         
         # Generate response
-        response = self._llm.generate(query, context, evaluation_mode=self._evaluation_mode)
+        response = self.llm.generate(query, context, evaluation_mode=self.evaluation_mode)
         
-        return response, retrieved_texts
+        return response
+    
+    def stream_run(self, query: str):
+        """Process a query and stream the response"""
+        # Get context
+        retrieved_texts = self.retrieve_context(query)
+        
+        # Combine retrieved documents
+        context = "\n\n".join(retrieved_texts)
+        
+        # Stream response
+        return self.llm.stream_generate(query, context, evaluation_mode=self.evaluation_mode)
