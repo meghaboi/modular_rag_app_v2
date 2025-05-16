@@ -573,12 +573,14 @@ def display_chat_interface():
                 logging.info("Starting streaming generation...")
                 full_response = ""
                 
-                # Use the new stream_run method from RAGPipeline
                 for chunk in st.session_state.pipeline.stream_run(user_query):
-                    full_response += chunk
-                    # Update the UI with each chunk
-                    with tab_stream_text:
-                        stream_placeholder.markdown(full_response + "▌")
+                    if chunk is not None:
+                        full_response += chunk
+                        # Update the UI with each chunk
+                        with tab_stream_text:
+                            stream_placeholder.markdown(full_response + "▌")
+                    else:
+                        logging.warning("Received None chunk from stream_run, skipping")
                 
                 # Replace the blinking cursor with the final response
                 with tab_stream_text:
@@ -1069,15 +1071,6 @@ def main():
         Test the current config or run the **All Permutations Test**.
         """)
         display_evaluation_interface()
-
-    st.markdown("---")
-    with st.expander("📚 About Chunking Strategies"):
-        try:
-            chunking_strategies = ChunkingStrategyFactory.get_all_strategies()
-            for name, strategy in chunking_strategies.items():
-                st.markdown(f"##### {name.replace('_', ' ').title()}")
-                st.markdown(strategy.description); st.markdown("---")
-        except Exception as e: st.warning(f"Could not load chunking descriptions: {e}")
 
 
 if __name__ == "__main__":

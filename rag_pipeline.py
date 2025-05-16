@@ -602,4 +602,9 @@ class RAGPipeline:
         context = "\n\n".join(retrieved_texts)
         
         # Stream response
-        return self.llm.stream_generate(query, context, evaluation_mode=self.evaluation_mode)
+        for chunk in self.llm.stream_generate(query, context, evaluation_mode=self.evaluation_mode):
+            # Ensure we're not returning None values from our generator
+            if chunk is not None:
+                yield chunk
+            else:
+                logging.warning("LLM returned None chunk, skipping")
