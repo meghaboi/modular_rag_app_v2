@@ -594,7 +594,15 @@ class RAGPipeline:
         return response
     
     def stream_run(self, query: str):
-        """Process a query and stream the response"""
+        """Process a query and stream the response
+        
+        In evaluation mode, this will use non-streaming to maintain consistency
+        """
+        # If we're in evaluation mode, use the non-streaming method instead
+        if self.evaluation_mode:
+            yield self.run(query)
+            return
+            
         # Get context
         retrieved_texts = self.retrieve_context(query)
         
@@ -608,3 +616,31 @@ class RAGPipeline:
                 yield chunk
             else:
                 logging.warning("LLM returned None chunk, skipping")
+                
+    def process_query(self, query: str) -> Tuple[str, List[str]]:
+        """Process a query and return the response and retrieved contexts"""
+        # Get query embedding
+        query_embedding = self.embedding_model.embed_query(query)
+
+        # Retrieve documents - check if vector store supports hybrid search
+        if hasattr(self.vector_store, 'search') and 'query' in self.vector_store.search.__code__.co_varnames:
+            # Vector store supports hybrid search
+            retrieved_docs = self.vector_store.search(query_embedding, self.top_k, query=query)
+        else:
+            # Standard vector search
+            retrieved_docs = self.vector_store.search(query_embedding, self.top_k)
+
+        retrieved_texts = [doc[0] for doc in retrieved_docs]
+
+        # Apply reranking if available
+        if self.reranker and retrieved_texts:
+            reranked_docs = self.reranker.rerank(query, retrieved_texts)
+            retrieved_texts = [doc[0] for doc in reranked_docs]
+
+        # Combine retrieved documents
+        context = "\n\n".join(retrieved_texts)
+
+        # Generate response
+        response = self.llm.generate(query, context, evaluation_mode=self.evaluation_mode)
+
+        return response, retrieved_texts
