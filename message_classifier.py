@@ -17,13 +17,13 @@ class MessageClassifier:
         # Define the function schema for message classification
         self._function_schema = {
             "name": "classify_message",
-            "description": "Classify the user's message into one of three categories",
+            "description": "Classify the user's message into one of two categories",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "category": {
                         "type": "string",
-                        "enum": ["greeting", "relevant_query", "irrelevant_query"],
+                        "enum": ["greeting", "other"],
                         "description": "The category of the message"
                     },
                     "explanation": {
@@ -32,7 +32,7 @@ class MessageClassifier:
                     },
                     "response": {
                         "type": "string",
-                        "description": "Appropriate response message for greetings or irrelevant queries. Leave empty for relevant queries."
+                        "description": "Appropriate response message for greetings. Leave empty for other queries."
                     }
                 },
                 "required": ["category", "explanation", "response"]
@@ -47,20 +47,19 @@ class MessageClassifier:
             
         Returns:
             Dict containing classification results with keys:
-            - category: The message category (greeting/relevant_query/irrelevant_query)
+            - category: The message category (greeting/other)
             - explanation: Why this category was chosen
-            - response: Response message for greetings/irrelevant queries (empty for relevant)
+            - response: Response message for greetings (empty for other queries)
         """
         # Create the system prompt for classification
-        system_prompt = """You are a helpful AI assistant that classifies user messages into three categories:
+        system_prompt = """You are a helpful AI assistant that classifies user messages into two categories:
         1. greeting: General greetings, pleasantries, or small talk
-        2. relevant_query: Questions or requests related to studying, learning, or understanding academic content
-        3. irrelevant_query: Questions or requests not related to academic content or learning
+        2. other: Any other type of message that should be handled by the RAG pipeline
         
-        For greetings and irrelevant queries, provide an appropriate response message.
-        For relevant queries, leave the response empty as they will be handled by the RAG pipeline.
+        For greetings, provide an appropriate response message.
+        For all other messages, leave the response empty as they will be handled by the RAG pipeline.
         
-        Always maintain a friendly and helpful tone, even when marking something as irrelevant."""
+        Always maintain a friendly and helpful tone."""
         
         try:
             # Call Claude with function calling
@@ -89,8 +88,8 @@ class MessageClassifier:
             else:
                 logging.warning("No tool use block found in response")
                 return {
-                    "category": "relevant_query",
-                    "explanation": "Failed to classify message, treating as relevant by default",
+                    "category": "other",
+                    "explanation": "Failed to classify message, treating as other by default",
                     "response": ""
                 }
                 
@@ -98,7 +97,7 @@ class MessageClassifier:
             logging.error(f"Error in message classification: {e}")
             # Fallback in case of any errors
             return {
-                "category": "relevant_query",
-                "explanation": f"Error during classification: {str(e)}. Treating as relevant by default",
+                "category": "other",
+                "explanation": f"Error during classification: {str(e)}. Treating as other by default",
                 "response": ""
             } 

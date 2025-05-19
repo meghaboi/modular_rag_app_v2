@@ -470,7 +470,7 @@ class ClaudeLLM(StreamingLLM):
                     yield chunk.content
         else:
             if context:
-                # Use cache_control for context to mark it as ephemeral
+                logging.info(f"ClaudeLLM: in if context condition.")
                 messages = [
                     {
                         "role": "system",
