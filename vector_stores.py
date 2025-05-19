@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Tuple
 import numpy as np
 from enums import VectorStoreType
 import logging
+import os
 
 class VectorStore(ABC):
     """Abstract base class for vector stores following Interface Segregation Principle"""
@@ -65,23 +66,44 @@ class FAISSVectorStore(VectorStore):
         return results
 
 class ChromaVectorStore(VectorStore):
-    """Chroma vector store implementation"""
+    """ChromaDB vector store implementation"""
     
-    def __init__(self):
-        """Initialize the Chroma vector store"""
-        import chromadb
-        from chromadb.config import Settings
-        import uuid
-        
-        # Create a temporary client with in-memory storage
-        self._client = chromadb.Client(Settings(anonymized_telemetry=False))
-        
-        # Create a collection with a unique ID
-        self._collection_name = f"collection_{str(uuid.uuid4())[:8]}"
-        self._collection = self._client.create_collection(name=self._collection_name)
-        
-        # Store document mapping
-        self._id_to_doc = {}
+    def __init__(self, persist_directory: str = "chroma_db"):
+        """Initialize ChromaDB client with persistent storage"""
+        try:
+            # Create persist directory if it doesn't exist
+            os.makedirs(persist_directory, exist_ok=True)
+            
+            # Initialize ChromaDB with persistent storage
+            self._client = chromadb.PersistentClient(
+                path=persist_directory,
+                settings=Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True
+                )
+            )
+            
+            # Create or get the collection
+            self._collection = self._client.get_or_create_collection(
+                name="documents",
+                metadata={"hnsw:space": "cosine"}
+            )
+            
+            logging.info(f"ChromaDB initialized with persistent storage at {persist_directory}")
+        except Exception as e:
+            logging.error(f"Error initializing ChromaDB: {e}")
+            # Fallback to in-memory client if persistent storage fails
+            self._client = chromadb.Client(
+                Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True
+                )
+            )
+            self._collection = self._client.create_collection(
+                name="documents",
+                metadata={"hnsw:space": "cosine"}
+            )
+            logging.warning("Falling back to in-memory ChromaDB storage")
     
     def add_documents(self, documents: List[str], embeddings: List[List[float]]) -> None:
         """Add documents and their embeddings to the vector store"""
@@ -90,9 +112,6 @@ class ChromaVectorStore(VectorStore):
         
         # Generate IDs for documents
         ids = [f"doc_{i}" for i in range(len(documents))]
-        
-        # Store mapping of IDs to documents
-        self._id_to_doc = {doc_id: doc for doc_id, doc in zip(ids, documents)}
         
         # Add documents to collection
         self._collection.add(
@@ -103,13 +122,13 @@ class ChromaVectorStore(VectorStore):
     
     def search(self, query_embedding: List[float], top_k: int = 5) -> List[Tuple[str, float]]:
         """Search for similar documents using the query embedding"""
-        if not self._id_to_doc:
+        if not self._collection:
             return []
         
         # Query collection
         results = self._collection.query(
             query_embeddings=[query_embedding],
-            n_results=min(top_k, len(self._id_to_doc))
+            n_results=min(top_k, len(self._collection.get_all_ids()))
         )
         
         # Format results

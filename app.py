@@ -8,12 +8,14 @@ import datetime
 import base64
 import logging
 import itertools
+import random
 from typing import List, Dict, Any, Optional
 
 import pandas as pd
 from dotenv import load_dotenv
 from openai import OpenAI
 import httpx 
+from anthropic import Anthropic
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -549,7 +551,34 @@ def display_chat_interface():
             })
             st.stop()
 
-        # Start streaming response process
+        # Check if it's a greeting
+        is_greet, greeting_response = is_greeting(user_query)
+        if is_greet:
+            greeting_audio = text_to_speech(greeting_response)
+            
+            with st.chat_message("assistant"):
+                tab_labels_greet = ["📖 Read Response", "🔊 Hear Response"]
+                tab_greet_text, tab_greet_audio = st.tabs(tab_labels_greet)
+                
+                with tab_greet_text:
+                    st.write(greeting_response)
+                
+                with tab_greet_audio:
+                    if greeting_audio:
+                        st.audio(greeting_audio, format="audio/mp3")
+                    else:
+                        st.info("Audio playback not available.")
+                
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": greeting_response,
+                    "audio": greeting_audio,
+                    "contexts": [],
+                    "elapsed_time": None
+                })
+            return
+
+        # Start streaming response process for non-greeting queries
         with st.chat_message("assistant"):
             start_time = time.time()
             
@@ -1048,6 +1077,73 @@ def attempt_automatic_initialization():
                     else: st.error("Auto-init failed. Try manual."); logging.error("Auto-init failed.")
                  except Exception as e:
                      st.error(f"Auto-init error: {e}. Try manual."); logging.error(f"Auto-init error: {e}", exc_info=True)
+
+def is_greeting(query: str) -> tuple[bool, str]:
+    """Detect if the query is a greeting using Anthropic's function calling and get the response."""
+    try:
+        client = Anthropic()
+        
+        # Define the function for greeting detection
+        greeting_function = {
+            "name": "detect_greeting",
+            "description": "Detect if the input text is a greeting or small talk and provide a friendly response",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "is_greeting": {
+                        "type": "boolean",
+                        "description": "Whether the input is a greeting or small talk"
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "description": "Confidence score between 0 and 1"
+                    },
+                    "response": {
+                        "type": "string",
+                        "description": "A friendly response to the greeting"
+                    }
+                },
+                "required": ["is_greeting", "confidence", "response"]
+            }
+        }
+
+        # Call Anthropic with function calling
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=1024,
+            messages=[{
+                "role": "user",
+                "content": f"Analyze if this is a greeting or small talk and provide a friendly response: {query}"
+            }],
+            tools=[greeting_function]
+        )
+
+        # Extract the function call result
+        tool_calls = [content for content in response.content if content.type == "tool_use"]
+        if tool_calls:
+            result = tool_calls[0].input
+            is_greeting = result.get("is_greeting", False)
+            confidence = result.get("confidence", 0.0)
+            greeting_response = result.get("response", "")
+            
+            # Only consider it a greeting if confidence is high enough
+            return (is_greeting and confidence > 0.7, greeting_response)
+            
+        return (False, "")
+    except Exception as e:
+        logging.error(f"Error in greeting detection: {e}")
+        return (False, "")
+
+def get_greeting_response() -> str:
+    """Generate a friendly greeting response."""
+    greetings = [
+        "Hey there! How can I help you with your studies today?",
+        "Hi! Ready to tackle some learning together?",
+        "Hello! What would you like to learn about?",
+        "Hey! I'm here to help you understand your textbook better. What's on your mind?",
+        "Hi there! Let's make learning fun. What would you like to know?"
+    ]
+    return random.choice(greetings)
 
 def main():
     st.title("👋 Hey! I'm JEFF, Your Study Buddy")
