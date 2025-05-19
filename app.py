@@ -28,8 +28,6 @@ try:
     from llm_models import LLMFactory
     from evaluator import EvaluatorFactory
     from rag_pipeline import RAGPipeline, ChunkingStrategyFactory
-    from message_classifier import MessageClassifier
-    from subject_config import SubjectConfig
 except ImportError as e:
     st.error(f"Failed to import custom modules: {e}. Make sure all required .py files are present.")
     logging.error(f"ImportError: {e}", exc_info=True)
@@ -89,9 +87,6 @@ if 'top_k' not in st.session_state:
     st.session_state.top_k = DEFAULT_TOP_K
 if 'hybrid_alpha' not in st.session_state:
     st.session_state.hybrid_alpha = DEFAULT_HYBRID_ALPHA
-
-if 'message_classifier' not in st.session_state:
-    st.session_state.message_classifier = None
 
 def save_uploaded_file(uploaded_file):
     """Save uploaded file to a temporary location and return the path"""
@@ -473,22 +468,13 @@ def display_chat_interface():
     st.header("💬 Chat with JEFF")
     st.markdown("Hey! Got questions about your textbook? Lay 'em on me. I'll break it down for ya.")
 
-    # Initialize message classifier if not already done
-    if st.session_state.message_classifier is None:
-        try:
-            st.session_state.message_classifier = MessageClassifier()
-        except Exception as e:
-            st.error(f"Failed to initialize message classifier: {e}")
-            logging.error(f"MessageClassifier initialization error: {e}", exc_info=True)
-            st.stop()
-
     if not st.session_state.messages:
          welcome_msg = "Alright, let's get this study session started! What's on your mind?"
-         welcome_audio_bytes = text_to_speech(welcome_msg)
+         welcome_audio_bytes = text_to_speech(welcome_msg) # Generate audio
          st.session_state.messages.append({
              "role": "assistant",
              "content": welcome_msg,
-             "audio": welcome_audio_bytes,
+             "audio": welcome_audio_bytes, # Store audio bytes
              "contexts": [],
              "elapsed_time": None
          })
@@ -545,72 +531,26 @@ def display_chat_interface():
         with st.chat_message("user"):
             st.write(user_query)
 
-        # Only use message classifier if no document is loaded
         if st.session_state.pipeline is None:
-            try:
-                logging.info(f"in if condition.")
-                classification = st.session_state.message_classifier.classify(user_query)
-                logging.info(f"Message classification: {classification}")
-                
-                if classification["category"] == "greeting":
-                    # For greetings, use the classifier's response
-                    response_text = classification["response"]
-                    audio_bytes = text_to_speech(response_text)
-                    
-                    with st.chat_message("assistant"):
-                        tab_labels = ["📖 Read Response", "🔊 Hear Response"]
-                        tab_text, tab_audio = st.tabs(tab_labels)
-                        
-                        with tab_text:
-                            st.write(response_text)
-                        
-                        with tab_audio:
-                            if audio_bytes:
-                                st.audio(audio_bytes, format="audio/mp3")
-                            else:
-                                st.info("Audio playback is not available for this message.")
-                    
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": response_text,
-                        "audio": audio_bytes,
-                        "contexts": [],
-                        "elapsed_time": None
-                    })
-                else:
-                    # For non-greetings when no document is loaded
-                    warning_msg = "Whoa there! Looks like we haven't loaded your textbook into my brain yet. Upload it and hit 'Initialize' in the sidebar first!"
-                    warning_audio = text_to_speech(warning_msg)
-                    with st.chat_message("assistant"):
-                         tab_labels_warn = ["📖 Read Message", "🔊 Hear Message"]
-                         tab_warn_text, tab_warn_audio = st.tabs(tab_labels_warn)
-                         with tab_warn_text: st.warning(warning_msg, icon="✋")
-                         with tab_warn_audio:
-                             if warning_audio: st.audio(warning_audio, format="audio/mp3")
-                             else: st.info("Audio playback not available.")
+            logging.warning("Chat query received, but pipeline not initialized.")
+            warning_msg = "Whoa there! Looks like we haven't loaded your textbook into my brain yet. Upload it and hit 'Initialize' in the sidebar first!"
+            warning_audio = text_to_speech(warning_msg)
+            with st.chat_message("assistant"):
+                 tab_labels_warn = ["📖 Read Message", "🔊 Hear Message"]
+                 tab_warn_text, tab_warn_audio = st.tabs(tab_labels_warn)
+                 with tab_warn_text: st.warning(warning_msg, icon="✋")
+                 with tab_warn_audio:
+                     if warning_audio: st.audio(warning_audio, format="audio/mp3")
+                     else: st.info("Audio playback not available.")
 
-                    st.session_state.messages.append({
-                        "role": "assistant", 
-                        "content": warning_msg, 
-                        "audio": warning_audio,
-                        "contexts": [], 
-                        "elapsed_time": None
-                    })
-            except Exception as e:
-                logging.error(f"Error in message classification: {e}", exc_info=True)
-                warning_msg = "Whoa there! Looks like we haven't loaded your textbook into my brain yet. Upload it and hit 'Initialize' in the sidebar first!"
-                with st.chat_message("assistant"):
-                    st.warning(warning_msg, icon="✋")
-                    if warning_audio:
-                        st.audio(warning_audio, format="audio/mp3")
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": warning_msg,
-                    "audio": warning_audio,
-                    "contexts": [],
-                    "elapsed_time": None
-                })
-        else: 
+            st.session_state.messages.append({
+                "role": "assistant", "content": warning_msg, "audio": warning_audio,
+                "contexts": [], "elapsed_time": None
+            })
+            st.stop()
+
+        # Start streaming response process
+        with st.chat_message("assistant"):
             start_time = time.time()
             
             try:
@@ -926,41 +866,6 @@ def display_settings_panel():
         st.rerun()
 
     st.sidebar.header("📚 Load Textbook")
-    
-    # Add subject selection before file upload
-    if 'selected_subject' not in st.session_state:
-        st.session_state.selected_subject = "math"
-    
-    available_subjects = SubjectConfig.get_available_subjects()
-    available_subjects.append("other")
-    
-    selected_subject = st.sidebar.selectbox(
-        "Select Subject",
-        options=available_subjects,
-        index=available_subjects.index(st.session_state.selected_subject),
-        help="Choose the subject of your textbook to optimize the RAG pipeline"
-    )
-    
-    if selected_subject == "other":
-        custom_subject = st.sidebar.text_input("Enter custom subject name")
-        if custom_subject:
-            selected_subject = custom_subject.lower()
-    
-    if selected_subject != st.session_state.selected_subject:
-        st.session_state.selected_subject = selected_subject
-        # Apply subject-specific configuration
-        subject_config = SubjectConfig.get_subject_config(selected_subject)
-        st.session_state.embedding_model = subject_config["embedding_model"].value
-        st.session_state.vector_store = subject_config["vector_store"].value
-        st.session_state.reranker = subject_config["reranker"].value
-        st.session_state.llm_model = subject_config["llm_model"].value
-        st.session_state.chunking_strategy = subject_config["chunking_strategy"].value
-        st.session_state.chunk_size = subject_config["chunk_size"]
-        st.session_state.chunk_overlap = subject_config["chunk_overlap"]
-        st.session_state.top_k = subject_config["top_k"]
-        st.session_state.hybrid_alpha = subject_config["hybrid_alpha"]
-        st.rerun()
-
     uploaded_file = st.sidebar.file_uploader("Upload .txt file", type=['txt'], key="file_uploader")
     if uploaded_file is not None:
         if uploaded_file.name != st.session_state.get('last_uploaded_filename', None):

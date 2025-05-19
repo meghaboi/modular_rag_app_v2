@@ -36,9 +36,18 @@ class OpenAIGPT(StreamingLLM):
         You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
         Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
         
-        self._model = ChatOpenAI(model_name=model_name, streaming=False)
-        self._streaming_model = ChatOpenAI(model_name=model_name, streaming=True)
+        self._model = ChatOpenAI(
+            model_name=model_name,
+            streaming=False,
+            model_kwargs={"system": jeff_system_prompt}
+        )
+        self._streaming_model = ChatOpenAI(
+            model_name=model_name,
+            streaming=True,
+            model_kwargs={"system": jeff_system_prompt}
+        )
         self._jeff_system_prompt = jeff_system_prompt
+        self._cache = {}  # Initialize cache dictionary
 
     def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         cache_key = (prompt, context, evaluation_mode)
@@ -62,8 +71,6 @@ class OpenAIGPT(StreamingLLM):
             else:
                 return self._model.invoke(prompt).content
         else:
-            # Set system prompt for non-evaluation mode
-            self._model.system = self._jeff_system_prompt
             if context:
                 template = """
                 Answer the question as JEFF, that cool friend who explains subjects better than professors do.
@@ -109,8 +116,6 @@ class OpenAIGPT(StreamingLLM):
                     yield chunk.content
                 return
         else:
-            # Set system prompt for non-evaluation mode
-            self._streaming_model.system = self._jeff_system_prompt
             if context:
                 template = """
                 Answer the question as JEFF, that cool friend who explains subjects better than professors do.
@@ -346,8 +351,16 @@ class ClaudeLLM(StreamingLLM):
         You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
         Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
         
-        self._model = ChatAnthropic(model=model_name, system=jeff_system_prompt, streaming=False)
-        self._streaming_model = ChatAnthropic(model=model_name, system=jeff_system_prompt, streaming=True)
+        self._model = ChatAnthropic(
+            model=model_name,
+            streaming=False,
+            model_kwargs={"system": jeff_system_prompt}
+        )
+        self._streaming_model = ChatAnthropic(
+            model=model_name,
+            streaming=True,
+            model_kwargs={"system": jeff_system_prompt}
+        )
         self._jeff_system_prompt = jeff_system_prompt
         self._cache = {}  # Cache for storing generated responses
     
@@ -470,7 +483,6 @@ class ClaudeLLM(StreamingLLM):
                     yield chunk.content
         else:
             if context:
-                logging.info(f"ClaudeLLM: in if context condition.")
                 messages = [
                     {
                         "role": "system",
@@ -524,12 +536,25 @@ class MistralLLM(StreamingLLM):
         You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
         Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
         
-        self._model = ChatMistralAI(model=model_name, streaming=False)
-        self._streaming_model = ChatMistralAI(model=model_name, streaming=True)
+        self._model = ChatMistralAI(
+            model=model_name,
+            streaming=False,
+            model_kwargs={"system": jeff_system_prompt}
+        )
+        self._streaming_model = ChatMistralAI(
+            model=model_name,
+            streaming=True,
+            model_kwargs={"system": jeff_system_prompt}
+        )
         self._jeff_system_prompt = jeff_system_prompt
-    
+        self._cache = {}  # Initialize cache dictionary
+
     def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
+        cache_key = (prompt, context, evaluation_mode)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         from langchain.prompts import ChatPromptTemplate
         
         # In evaluation mode, don't use system prompt or JEFF persona
@@ -547,8 +572,6 @@ class MistralLLM(StreamingLLM):
             else:
                 return self._model.invoke(prompt).content
         else:
-            # Set system prompt for non-evaluation mode
-            self._model.system = self._jeff_system_prompt
             if context:
                 template = """
                 Answer the question as JEFF, that cool friend who explains subjects better than professors do.
@@ -570,6 +593,7 @@ class MistralLLM(StreamingLLM):
         prompt_template = ChatPromptTemplate.from_template(template)
         chain = prompt_template | self._model
         response = chain.invoke({"context": context, "question": prompt})
+        self._cache[cache_key] = response.content  # Cache the result
         return response.content
     
     def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Iterator[str]:
@@ -593,8 +617,6 @@ class MistralLLM(StreamingLLM):
                     yield chunk.content
                 return
         else:
-            # Set system prompt for non-evaluation mode
-            self._streaming_model.system = self._jeff_system_prompt
             if context:
                 template = """
                 Answer the question as JEFF, that cool friend who explains subjects better than professors do.
