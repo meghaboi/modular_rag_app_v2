@@ -537,6 +537,7 @@ class RAGPipeline:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.evaluation_mode = evaluation_mode
+        self.last_evaluation_scores = None  # Store the last evaluation scores
     
     def initialize(self, file_path: str) -> None:
         """Initialize the pipeline with a document file"""
@@ -619,28 +620,41 @@ class RAGPipeline:
                 
     def process_query(self, query: str) -> Tuple[str, List[str]]:
         """Process a query and return the response and retrieved contexts"""
-        # Get query embedding
-        query_embedding = self.embedding_model.embed_query(query)
+        try:
+            # Get contexts from vector store
+            contexts = self.retrieve_context(query)
+            
+            # Generate response
+            response = self.llm.generate(query, context="\n".join(contexts), evaluation_mode=self.evaluation_mode)
+            
+            return response, contexts
+        except Exception as e:
+            logging.error(f"Error processing query: {e}")
+            raise
 
-        # Retrieve documents - check if vector store supports hybrid search
-        if hasattr(self.vector_store, 'search') and 'query' in self.vector_store.search.__code__.co_varnames:
-            # Vector store supports hybrid search
-            retrieved_docs = self.vector_store.search(query_embedding, self.top_k, query=query)
-        else:
-            # Standard vector search
-            retrieved_docs = self.vector_store.search(query_embedding, self.top_k)
-
-        retrieved_texts = [doc[0] for doc in retrieved_docs]
-
-        # Apply reranking if available
-        if self.reranker and retrieved_texts:
-            reranked_docs = self.reranker.rerank(query, retrieved_texts)
-            retrieved_texts = [doc[0] for doc in reranked_docs]
-
-        # Combine retrieved documents
-        context = "\n\n".join(retrieved_texts)
-
-        # Generate response
-        response = self.llm.generate(query, context, evaluation_mode=self.evaluation_mode)
-
-        return response, retrieved_texts
+    def evaluate_response(self, query: str, response: str, contexts: List[str], ground_truth: str) -> Dict[str, float]:
+        """Evaluate the response using RAGAS metrics"""
+        try:
+            from evaluator import EvaluatorFactory
+            from enums import EvaluationBackendType, EvaluationMetricType
+            
+            evaluator = EvaluatorFactory.create_evaluator(
+                EvaluationBackendType.RAGAS,
+                EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.RAGAS)
+            )
+            
+            scores = evaluator.evaluate(
+                query=query,
+                response=response,
+                contexts=contexts,
+                ground_truth=ground_truth
+            )
+            
+            # Store the scores
+            self.last_evaluation_scores = scores
+            
+            return scores
+        except Exception as e:
+            logging.error(f"Error evaluating response: {e}")
+            self.last_evaluation_scores = None
+            raise

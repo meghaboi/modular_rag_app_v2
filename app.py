@@ -16,6 +16,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import httpx 
 from anthropic import Anthropic
+from subject_configs import SUBJECT_CONFIGS, get_subject_config
+from subject_handler import update_rag_configuration
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -726,8 +728,12 @@ def display_evaluation_interface():
                         valid_scores = []
                         if ground_truth:
                              try:
-                                evaluator = EvaluatorFactory.create_evaluator(EvaluationBackendType.RAGAS, EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.RAGAS))
-                                evaluation_results = evaluator.evaluate(query=user_query, response=response, contexts=contexts, ground_truth=ground_truth)
+                                evaluation_results = st.session_state.pipeline.evaluate_response(
+                                    query=user_query,
+                                    response=response,
+                                    contexts=contexts,
+                                    ground_truth=ground_truth
+                                )
                                 if evaluation_results and isinstance(evaluation_results, dict):
                                      valid_scores = [v for v in evaluation_results.values() if isinstance(v, (int, float))]
                                      if valid_scores: avg_score = sum(valid_scores) / len(valid_scores)
@@ -876,6 +882,19 @@ def display_settings_panel():
     st.sidebar.image("https://i.postimg.cc/DfLpxwZJ/Chat-GPT-Image-May-7-2025-11-10-13-AM.png", width=80)
     st.sidebar.title("Ask-JEFF")
 
+    # Add subject selection dropdown at the top of the sidebar
+    subjects = list(SUBJECT_CONFIGS.keys())
+    selected_subject = st.sidebar.selectbox(
+        "Select Subject",
+        subjects,
+        index=subjects.index("general"),
+        help="Choose the subject of your textbook for optimal RAG configuration"
+    )
+
+    # Update RAG configuration when subject changes
+    if st.session_state.pipeline is not None:
+        update_rag_configuration(selected_subject, st.session_state.pipeline)
+
     mode_options = {"💬 Chat with JEFF": "chat", "🧪 Test Setups (Evaluation)": "evaluation"}
     current_mode = st.session_state.get('mode', 'chat')
     if current_mode not in mode_options.values(): current_mode = 'chat'; st.session_state.mode = 'chat'
@@ -957,17 +976,91 @@ def display_settings_panel():
             if selected_strategy_obj: st.caption(f"**{selected_strategy_enum.value.replace('_', ' ').title()}:** {selected_strategy_obj.description}")
         except Exception as e: logging.warning(f"Failed to get chunking description: {e}")
 
-        st.session_state.chunk_size = st.slider("Chunk Size (chars)", 200, 4000, st.session_state.chunk_size, 50, key="sb_chunk_size", disabled=disable_widgets)
-        st.session_state.chunk_overlap = st.slider("Chunk Overlap (chars)", 0, 1000, st.session_state.chunk_overlap, 25, key="sb_chunk_overlap", disabled=disable_widgets, help="Overlap < Chunk Size")
-        st.session_state.top_k = st.slider("Docs to Retrieve (Top K)", 1, 15, st.session_state.top_k, 1, key="sb_top_k", disabled=disable_widgets)
+        # Get subject-specific configuration
+        subject_config = get_subject_config(selected_subject)
+        
+        # Update slider values based on subject configuration
+        st.session_state.chunk_size = st.slider(
+            "Chunk Size (chars)", 
+            min_value=200, 
+            max_value=4000, 
+            value=subject_config.chunk_size, 
+            step=50, 
+            key="sb_chunk_size", 
+            disabled=disable_widgets
+        )
+        
+        st.session_state.chunk_overlap = st.slider(
+            "Chunk Overlap (chars)", 
+            min_value=0, 
+            max_value=1000, 
+            value=subject_config.chunk_overlap, 
+            step=25, 
+            key="sb_chunk_overlap", 
+            disabled=disable_widgets, 
+            help="Overlap < Chunk Size"
+        )
+        
+        st.session_state.top_k = st.slider(
+            "Docs to Retrieve (Top K)", 
+            min_value=1, 
+            max_value=15, 
+            value=subject_config.top_k if hasattr(subject_config, 'top_k') else DEFAULT_TOP_K, 
+            step=1, 
+            key="sb_top_k", 
+            disabled=disable_widgets
+        )
 
         try: selected_vector_store_enum = VectorStoreType.from_string(st.session_state.vector_store)
         except ValueError: selected_vector_store_enum = None
         if selected_vector_store_enum == VectorStoreType.HYBRID:
              st.caption("Hybrid search mixes keyword and vector search.")
-             st.session_state.hybrid_alpha = st.slider("Vector Weight (alpha)", 0.0, 1.0, st.session_state.hybrid_alpha, 0.05, key="sb_hybrid_alpha", disabled=disable_widgets, help="1.0=vector, 0.0=keyword")
+             st.session_state.hybrid_alpha = st.slider(
+                 "Vector Weight (alpha)", 
+                 0.0, 
+                 1.0, 
+                 subject_config.hybrid_alpha if hasattr(subject_config, 'hybrid_alpha') else DEFAULT_HYBRID_ALPHA, 
+                 0.05, 
+                 key="sb_hybrid_alpha", 
+                 disabled=disable_widgets, 
+                 help="1.0=vector, 0.0=keyword"
+             )
              kw_weight = 1.0 - float(st.session_state.get('hybrid_alpha', 0.5))
              st.write(f"Keyword Weight: {kw_weight:.2f}")
+
+        # Add current configuration scores section
+        if st.session_state.pipeline and hasattr(st.session_state.pipeline, 'last_evaluation_scores'):
+            st.markdown("---")
+            st.subheader("📊 Current Configuration Scores")
+            
+            scores = st.session_state.pipeline.last_evaluation_scores
+            if scores and isinstance(scores, dict):
+                # Create columns for metrics
+                metric_cols = st.columns(len(scores))
+                i = 0
+                valid_scores = []
+                
+                for metric, score in scores.items():
+                    if isinstance(score, (int, float)):
+                        with metric_cols[i]:
+                            score_display = f"{score:.2f}"
+                            st.metric(
+                                label=metric.replace('_', ' ').title(),
+                                value=score_display,
+                                delta=None
+                            )
+                        valid_scores.append(score)
+                    i += 1
+                
+                if valid_scores:
+                    avg_score = sum(valid_scores) / len(valid_scores)
+                    st.metric("Overall Average Score", f"{avg_score:.2f}")
+            else:
+                st.info("No evaluation scores available yet. Run an evaluation to see scores.")
+        elif st.session_state.pipeline:
+            st.markdown("---")
+            st.subheader("📊 Current Configuration Scores")
+            st.info("No evaluation scores available yet. Run an evaluation to see scores.")
 
     st.sidebar.markdown("---")
     if st.session_state.mode == "chat":
