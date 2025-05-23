@@ -10,6 +10,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from rank_bm25 import BM25Okapi
 import numpy as np  
+from token_utils import TokenCounter
+import logging
+import time
 
 class HybridSearch:
     """Combines dense vector search with sparse keyword search (BM25)"""
@@ -114,9 +117,18 @@ class HybridSearch:
 class ChunkingStrategy(ABC):
     """Abstract class for text chunking strategies"""
     
+    def __init__(self):
+        self.token_counter = TokenCounter()
+    
     @abstractmethod
     def chunk_text(self, text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
-        """Split text into chunks with the specified strategy"""
+        """Split text into chunks with the specified strategy
+        
+        Args:
+            text: Text to chunk
+            chunk_size: Maximum number of tokens per chunk
+            chunk_overlap: Number of tokens to overlap between chunks
+        """
         pass
     
     @property
@@ -139,33 +151,39 @@ class ParagraphChunking(ChunkingStrategy):
         paragraphs = re.split(r'\n\s*\n', text)
         chunks = []
         current_chunk = ""
+        current_tokens = 0
         
         for paragraph in paragraphs:
             paragraph = paragraph.strip()
             if not paragraph:
                 continue
-                
-            if len(current_chunk) + len(paragraph) <= chunk_size:
+            
+            paragraph_tokens = self.token_counter.count_tokens(paragraph)
+            
+            if current_tokens + paragraph_tokens <= chunk_size:
                 if current_chunk:
                     current_chunk += "\n\n" + paragraph
                 else:
                     current_chunk = paragraph
+                current_tokens += paragraph_tokens
             else:
                 chunks.append(current_chunk)
                 # Start new chunk with overlap
                 overlap_text = ""
+                overlap_tokens = 0
                 current_chunk_paragraphs = re.split(r'\n\s*\n', current_chunk)
                 
                 # Calculate overlap
-                remaining_size = chunk_overlap
                 for para in reversed(current_chunk_paragraphs):
-                    if len(para) <= remaining_size:
+                    para_tokens = self.token_counter.count_tokens(para)
+                    if overlap_tokens + para_tokens <= chunk_overlap:
                         overlap_text = para + "\n\n" + overlap_text if overlap_text else para
-                        remaining_size -= len(para)
+                        overlap_tokens += para_tokens
                     else:
                         break
                 
                 current_chunk = overlap_text + paragraph if overlap_text else paragraph
+                current_tokens = self.token_counter.count_tokens(current_chunk)
         
         if current_chunk:
             chunks.append(current_chunk)
@@ -185,33 +203,7 @@ class SlidingWindowChunking(ChunkingStrategy):
     
     def chunk_text(self, text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
         """Split text into chunks using a sliding window approach"""
-        chunks = []
-        text = text.replace('\n', ' ').replace('\r', '')
-        
-        # Remove extra spaces
-        text = re.sub(r'\s+', ' ', text).strip()
-        
-        # Use tokens (words) as the unit for chunking
-        tokens = text.split(' ')
-        
-        # Approximate chunk_size and chunk_overlap in terms of tokens
-        # Assuming average word length of 5 characters + 1 for space
-        avg_token_size = 6
-        token_chunk_size = max(1, chunk_size // avg_token_size)
-        token_overlap = max(1, chunk_overlap // avg_token_size)
-        
-        # Create chunks with sliding window
-        for i in range(0, len(tokens), token_chunk_size - token_overlap):
-            chunk_tokens = tokens[i:i + token_chunk_size]
-            if chunk_tokens:
-                chunk = ' '.join(chunk_tokens)
-                chunks.append(chunk)
-                
-            # Break if this is the last chunk
-            if i + token_chunk_size >= len(tokens):
-                break
-        
-        return chunks
+        return self.token_counter.split_into_chunks(text, chunk_size, chunk_overlap)
     
     @property
     def name(self) -> str:
@@ -231,6 +223,7 @@ class HierarchicalChunking(ChunkingStrategy):
         Args:
             levels: Number of hierarchical levels (default: 2)
         """
+        super().__init__()
         self.levels = max(2, min(levels, 4))  # Constrain between 2-4 levels
     
     def chunk_text(self, text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
@@ -251,13 +244,12 @@ class HierarchicalChunking(ChunkingStrategy):
         
         all_chunks = []
         
-        # Level 1: Create base chunks (similar to paragraph chunking)
+        # Level 1: Create base chunks
         base_chunks = self._create_base_chunks(paragraphs, chunk_size, chunk_overlap)
         all_chunks.extend(base_chunks)
         
         # Level 2+: Create progressively larger chunks
         for level in range(2, self.levels + 1):
-            # Increase chunk size for each level (2x, 4x, 8x)
             level_chunk_size = chunk_size * (2 ** (level - 1))
             level_overlap = min(chunk_overlap * level, level_chunk_size // 4)
             
@@ -272,32 +264,37 @@ class HierarchicalChunking(ChunkingStrategy):
         """Create base-level chunks from paragraphs"""
         chunks = []
         current_chunk = ""
+        current_tokens = 0
         
         for paragraph in paragraphs:
             if not paragraph:
                 continue
-                
-            if len(current_chunk) + len(paragraph) <= chunk_size:
+            
+            paragraph_tokens = self.token_counter.count_tokens(paragraph)
+            
+            if current_tokens + paragraph_tokens <= chunk_size:
                 if current_chunk:
                     current_chunk += "\n\n" + paragraph
                 else:
                     current_chunk = paragraph
+                current_tokens += paragraph_tokens
             else:
                 chunks.append(current_chunk)
                 # Start new chunk with overlap
                 overlap_text = ""
+                overlap_tokens = 0
                 current_chunk_paragraphs = re.split(r'\n\s*\n', current_chunk)
                 
-                # Calculate overlap
-                remaining_size = chunk_overlap
                 for para in reversed(current_chunk_paragraphs):
-                    if len(para) <= remaining_size:
+                    para_tokens = self.token_counter.count_tokens(para)
+                    if overlap_tokens + para_tokens <= chunk_overlap:
                         overlap_text = para + "\n\n" + overlap_text if overlap_text else para
-                        remaining_size -= len(para)
+                        overlap_tokens += para_tokens
                     else:
                         break
                 
                 current_chunk = overlap_text + paragraph if overlap_text else paragraph
+                current_tokens = self.token_counter.count_tokens(current_chunk)
         
         if current_chunk:
             chunks.append(current_chunk)
@@ -307,66 +304,58 @@ class HierarchicalChunking(ChunkingStrategy):
     def _create_level_chunks(self, full_text: str, base_chunks: List[str], 
                            level_chunk_size: int, level_overlap: int, level: int) -> List[str]:
         """Create higher-level chunks from base chunks or full text"""
-        # For higher levels, we'll create sliding windows over the whole text
         chunks = []
-        
-        # Add level prefix to each chunk for identification
         prefix = f"[L{level}] "
         
         # Split full text into sentences or paragraphs as atomic units
         if level == 2:
-            # Use paragraphs as units for level 2
             units = re.split(r'\n\s*\n', full_text)
             units = [u.strip() for u in units if u.strip()]
         else:
-            # Use sentences as units for higher levels
             units = re.split(r'(?<=[.!?])\s+', full_text)
             units = [u.strip() for u in units if u.strip()]
         
         current_chunk = prefix
-        current_length = 0
+        current_tokens = self.token_counter.count_tokens(prefix)
         
         for unit in units:
-            unit_length = len(unit)
+            unit_tokens = self.token_counter.count_tokens(unit)
             
-            if current_length + unit_length <= level_chunk_size:
-                if current_length > len(prefix):
+            if current_tokens + unit_tokens <= level_chunk_size:
+                if current_tokens > self.token_counter.count_tokens(prefix):
                     current_chunk += "\n\n" if level == 2 else " "
                 current_chunk += unit
-                current_length += unit_length
+                current_tokens += unit_tokens
             else:
                 chunks.append(current_chunk)
                 
-                # Calculate overlap by picking units from the end
+                # Calculate overlap
                 overlap_text = prefix
-                overlap_length = 0
+                overlap_tokens = self.token_counter.count_tokens(prefix)
                 
-                # Find where we should start for overlap
                 chunk_units = current_chunk[len(prefix):].split("\n\n" if level == 2 else " ")
                 overlap_start_idx = 0
                 
                 for i in range(len(chunk_units) - 1, -1, -1):
-                    unit_len = len(chunk_units[i])
-                    if overlap_length + unit_len <= level_overlap:
-                        overlap_length += unit_len
+                    unit_tokens = self.token_counter.count_tokens(chunk_units[i])
+                    if overlap_tokens + unit_tokens <= level_overlap:
+                        overlap_tokens += unit_tokens
                         overlap_start_idx = i
                     else:
                         break
                 
-                # Build overlap text
                 overlap_text = prefix
                 if overlap_start_idx > 0:
                     overlap_units = chunk_units[overlap_start_idx:]
                     overlap_text += ("\n\n" if level == 2 else " ").join(overlap_units)
                 
-                # Start new chunk with overlap content
                 current_chunk = overlap_text
-                if current_length > len(prefix):
+                if current_tokens > self.token_counter.count_tokens(prefix):
                     current_chunk += "\n\n" if level == 2 else " "
                 current_chunk += unit
-                current_length = len(current_chunk)
+                current_tokens = self.token_counter.count_tokens(current_chunk)
         
-        if current_length > len(prefix):
+        if current_tokens > self.token_counter.count_tokens(prefix):
             chunks.append(current_chunk)
         
         return chunks
@@ -390,75 +379,62 @@ class SemanticChunking(ChunkingStrategy):
             similarity_threshold: Threshold for determining topic change (0-1)
             min_chunk_size: Minimum size of chunks to avoid overly small chunks
         """
+        super().__init__()
         self.similarity_threshold = similarity_threshold
         self.min_chunk_size = min_chunk_size
         self.vectorizer = TfidfVectorizer(stop_words='english')
     
     def chunk_text(self, text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
         """Split text into chunks based on semantic similarity"""
-        # First split text into paragraphs as our base units
         paragraphs = re.split(r'\n\s*\n', text)
         paragraphs = [p.strip() for p in paragraphs if p.strip()]
         
         if not paragraphs:
             return []
         
-        # If we have very few paragraphs, use them directly
         if len(paragraphs) <= 3:
             return paragraphs
         
-        # Create TF-IDF vectors for each paragraph
         try:
             tfidf_matrix = self.vectorizer.fit_transform(paragraphs)
-            # Compute similarity matrix
             similarity_matrix = cosine_similarity(tfidf_matrix)
         except ValueError:
-            # Fallback if vectorization fails (e.g., with very short paragraphs)
             return self._fallback_chunking(paragraphs, chunk_size, chunk_overlap)
         
-        # Group paragraphs into semantic chunks
         chunks = []
         current_chunk_paragraphs = [paragraphs[0]]
-        current_chunk_size = len(paragraphs[0])
+        current_tokens = self.token_counter.count_tokens(paragraphs[0])
         
         for i in range(1, len(paragraphs)):
             current_paragraph = paragraphs[i]
-            paragraph_length = len(current_paragraph)
+            paragraph_tokens = self.token_counter.count_tokens(current_paragraph)
             
-            # Calculate average similarity with paragraphs in current chunk
             similarities = [similarity_matrix[i][j] for j in range(i) 
                             if paragraphs[j] in current_chunk_paragraphs]
             avg_similarity = np.mean(similarities) if similarities else 0
             
-            # Check if paragraph is semantically similar to current chunk
-            # OR if current chunk is too small
             if (avg_similarity >= self.similarity_threshold and 
-                current_chunk_size + paragraph_length <= chunk_size * 1.5) or \
-               current_chunk_size < self.min_chunk_size:
-                # Add to current chunk
+                current_tokens + paragraph_tokens <= chunk_size * 1.5) or \
+               current_tokens < self.min_chunk_size:
                 current_chunk_paragraphs.append(current_paragraph)
-                current_chunk_size += paragraph_length
+                current_tokens += paragraph_tokens
             else:
-                # Create a new chunk
                 chunks.append("\n\n".join(current_chunk_paragraphs))
                 
-                # Start new chunk with overlap
-                # Find paragraphs to include for overlap
                 overlap_paragraphs = []
-                overlap_size = 0
+                overlap_tokens = 0
                 
                 for para in reversed(current_chunk_paragraphs):
-                    if overlap_size + len(para) <= chunk_overlap:
+                    para_tokens = self.token_counter.count_tokens(para)
+                    if overlap_tokens + para_tokens <= chunk_overlap:
                         overlap_paragraphs.insert(0, para)
-                        overlap_size += len(para)
+                        overlap_tokens += para_tokens
                     else:
                         break
                 
-                # Start new chunk with overlap paragraphs and current paragraph
                 current_chunk_paragraphs = overlap_paragraphs + [current_paragraph]
-                current_chunk_size = sum(len(p) for p in current_chunk_paragraphs)
+                current_tokens = self.token_counter.count_tokens("\n\n".join(current_chunk_paragraphs))
         
-        # Add the last chunk if not empty
         if current_chunk_paragraphs:
             chunks.append("\n\n".join(current_chunk_paragraphs))
         
@@ -474,10 +450,9 @@ class SemanticChunking(ChunkingStrategy):
         """Ensure chunks don't exceed maximum size"""
         result = []
         for chunk in chunks:
-            if len(chunk) <= max_size * 1.5:  # Allow some flexibility
+            if self.token_counter.count_tokens(chunk) <= max_size * 1.5:
                 result.append(chunk)
             else:
-                # Split oversized chunks using paragraph chunking
                 paragraph_chunker = ParagraphChunking()
                 split_chunks = paragraph_chunker.chunk_text(chunk, max_size)
                 result.extend(split_chunks)
@@ -538,6 +513,7 @@ class RAGPipeline:
         self.chunk_overlap = chunk_overlap
         self.evaluation_mode = evaluation_mode
         self.last_evaluation_scores = None  # Store the last evaluation scores
+        self.last_metrics = {}  # Store the last performance metrics
     
     def initialize(self, file_path: str) -> None:
         """Initialize the pipeline with a document file"""
@@ -577,6 +553,8 @@ class RAGPipeline:
         # Apply reranking if available
         if self.reranker and retrieved_texts:
             reranked_docs = self.reranker.rerank(query, retrieved_texts)
+            # Select top 5 chunks after reranking
+            reranked_docs = reranked_docs[:5]
             retrieved_texts = [doc[0] for doc in reranked_docs]
         
         return retrieved_texts
@@ -618,16 +596,34 @@ class RAGPipeline:
             else:
                 logging.warning("LLM returned None chunk, skipping")
                 
-    def process_query(self, query: str) -> Tuple[str, List[str]]:
-        """Process a query and return the response and retrieved contexts"""
+    def process_query(self, query: str) -> Tuple[str, List[str], Dict[str, Any]]:
+        """Process a query and return the response, retrieved contexts, and metrics"""
         try:
+            start_time = time.time()
+            
             # Get contexts from vector store
             contexts = self.retrieve_context(query)
             
             # Generate response
             response = self.llm.generate(query, context="\n".join(contexts), evaluation_mode=self.evaluation_mode)
             
-            return response, contexts
+            # Calculate total time
+            total_time = time.time() - start_time
+            
+            # Count tokens
+            token_counter = TokenCounter(model_name=self.llm.get_model_name())
+            input_tokens = token_counter.count_tokens(query + "\n".join(contexts))
+            output_tokens = token_counter.count_tokens(response)
+            
+            # Store metrics
+            self.last_metrics = {
+                "total_time": total_time,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens
+            }
+            
+            return response, contexts, self.last_metrics
+            
         except Exception as e:
             logging.error(f"Error processing query: {e}")
             raise
@@ -649,6 +645,10 @@ class RAGPipeline:
                 contexts=contexts,
                 ground_truth=ground_truth
             )
+            
+            # Add performance metrics to scores
+            if self.last_metrics:
+                scores.update(self.last_metrics)
             
             # Store the scores
             self.last_evaluation_scores = scores

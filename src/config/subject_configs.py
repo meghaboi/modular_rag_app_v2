@@ -15,8 +15,8 @@ class SubjectConfig:
 # Default configurations for different subjects
 SUBJECT_CONFIGS = {
     "mathematics": SubjectConfig(
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=500,  # tokens
+        chunk_overlap=100,  # tokens
         similarity_threshold=0.7,
         max_tokens=2000,
         temperature=0.3,
@@ -25,8 +25,8 @@ SUBJECT_CONFIGS = {
         hybrid_alpha=0.6
     ),
     "physics": SubjectConfig(
-        chunk_size=1200,
-        chunk_overlap=300,
+        chunk_size=600,  # tokens
+        chunk_overlap=150,  # tokens
         similarity_threshold=0.75,
         max_tokens=2500,
         temperature=0.4,
@@ -35,8 +35,8 @@ SUBJECT_CONFIGS = {
         hybrid_alpha=0.7
     ),
     "chemistry": SubjectConfig(
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=500,  # tokens
+        chunk_overlap=100,  # tokens
         similarity_threshold=0.7,
         max_tokens=2000,
         temperature=0.3,
@@ -45,8 +45,8 @@ SUBJECT_CONFIGS = {
         hybrid_alpha=0.5
     ),
     "biology": SubjectConfig(
-        chunk_size=1500,
-        chunk_overlap=300,
+        chunk_size=750,  # tokens
+        chunk_overlap=150,  # tokens
         similarity_threshold=0.8,
         max_tokens=3000,
         temperature=0.4,
@@ -55,8 +55,8 @@ SUBJECT_CONFIGS = {
         hybrid_alpha=0.8
     ),
     "computer_science": SubjectConfig(
-        chunk_size=800,
-        chunk_overlap=150,
+        chunk_size=400,  # tokens
+        chunk_overlap=75,  # tokens
         similarity_threshold=0.65,
         max_tokens=1500,
         temperature=0.2,
@@ -65,8 +65,8 @@ SUBJECT_CONFIGS = {
         hybrid_alpha=0.4
     ),
     "history": SubjectConfig(
-        chunk_size=2000,
-        chunk_overlap=400,
+        chunk_size=1000,  # tokens
+        chunk_overlap=200,  # tokens
         similarity_threshold=0.85,
         max_tokens=4000,
         temperature=0.5,
@@ -75,8 +75,8 @@ SUBJECT_CONFIGS = {
         hybrid_alpha=0.9
     ),
     "literature": SubjectConfig(
-        chunk_size=1500,
-        chunk_overlap=300,
+        chunk_size=750,  # tokens
+        chunk_overlap=150,  # tokens
         similarity_threshold=0.8,
         max_tokens=3000,
         temperature=0.6,
@@ -85,8 +85,8 @@ SUBJECT_CONFIGS = {
         hybrid_alpha=0.85
     ),
     "economics": SubjectConfig(
-        chunk_size=1200,
-        chunk_overlap=250,
+        chunk_size=600,  # tokens
+        chunk_overlap=125,  # tokens
         similarity_threshold=0.75,
         max_tokens=2500,
         temperature=0.4,
@@ -95,8 +95,8 @@ SUBJECT_CONFIGS = {
         hybrid_alpha=0.6
     ),
     "psychology": SubjectConfig(
-        chunk_size=1500,
-        chunk_overlap=300,
+        chunk_size=750,  # tokens
+        chunk_overlap=150,  # tokens
         similarity_threshold=0.8,
         max_tokens=3000,
         temperature=0.5,
@@ -105,8 +105,8 @@ SUBJECT_CONFIGS = {
         hybrid_alpha=0.75
     ),
     "general": SubjectConfig(
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=500,  # tokens
+        chunk_overlap=100,  # tokens
         similarity_threshold=0.7,
         max_tokens=2000,
         temperature=0.4,

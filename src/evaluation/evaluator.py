@@ -295,7 +295,7 @@ class RAGASEvaluator(BaseEvaluator):
             self._metrics = list(self.ragas_metrics.keys())
         else:
             # Validate provided metrics
-            invalid_metrics = [m for m in metrics if m not in self.ragas_metrics]
+            invalid_metrics = [m for m in metrics if m not in self.ragas_metrics and m != "f1_score"]
             if invalid_metrics:
                 raise ValueError(f"Unsupported metrics: {invalid_metrics}")
             self._metrics = metrics
@@ -430,132 +430,24 @@ class RAGASEvaluator(BaseEvaluator):
                                 logging.warning(f"Metric {metric} not found in scores dictionary")
                                 metrics_dict[metric] = 3.0
             
-            # If we found metrics already, return them
-            if metrics_dict:
-                return metrics_dict
+            # Calculate F1 score if both context_recall and context_precision are available
+            if "f1_score" in self._metrics:
+                recall = metrics_dict.get("context_recall", 0)
+                precision = metrics_dict.get("context_precision", 0)
                 
-            # Fallback methods - try to extract scores from different properties
-            try:
-                # Try dataframe approach
-                df = pd.DataFrame(results)
-                logging.info(f"RAGAS DataFrame columns: {df.columns.tolist()}")
-                
-                for metric in self._metrics:
-                    found = False
-                    possible_names = self.metric_name_map.get(metric, [metric])
+                if recall > 0 and precision > 0:
+                    # Convert from 1-5 scale to 0-1 scale for calculation
+                    recall_01 = (recall - 1) / 4
+                    precision_01 = (precision - 1) / 4
                     
-                    for name in possible_names:
-                        for col in df.columns:
-                            if name.lower() in col.lower():
-                                raw_value = float(df[col].iloc[0])
-                                # FIXED SCALING: Properly map from 0-1 to 1-5 scale
-                                scaled_value = 1.0 + raw_value * 4.0
-                                metrics_dict[metric] = round(scaled_value, 2)
-                                found = True
-                                logging.info(f"Found metric {metric} as column {col}, value: {raw_value}")
-                                break
-                        if found:
-                            break
+                    # Calculate harmonic mean (F1 score)
+                    f1_score = 2 * (recall_01 * precision_01) / (recall_01 + precision_01)
                     
-                    if not found:
-                        logging.warning(f"Metric {metric} not found in DataFrame columns")
-                        metrics_dict[metric] = 3.0
-            except Exception as e:
-                logging.info(f"DataFrame approach failed: {str(e)}, trying direct attribute access")
-            
-            # If we found metrics using DataFrame approach, return them
-            if metrics_dict:
-                return metrics_dict
-                
-            # Check for direct attributes
-            for metric in self._metrics:
-                found = False
-                possible_names = self.metric_name_map.get(metric, [metric])
-                
-                for name in possible_names:
-                    if hasattr(results, name):
-                        try:
-                            raw_value = float(getattr(results, name))
-                            # FIXED SCALING: Properly map from 0-1 to 1-5 scale
-                            scaled_value = 1.0 + raw_value * 4.0
-                            metrics_dict[metric] = round(scaled_value, 2)
-                            found = True
-                            logging.info(f"Found metric {metric} as attribute {name}, value: {raw_value}")
-                            break
-                        except (ValueError, TypeError):
-                            continue
-                
-                if not found:
-                    # Try a more fuzzy match on attributes
-                    for attr_name in dir(results):
-                        if attr_name.startswith('_') or callable(getattr(results, attr_name)):
-                            continue
-                            
-                        for name in possible_names:
-                            if name.lower() in attr_name.lower() or attr_name.lower() in name.lower():
-                                try:
-                                    attr_value = getattr(results, attr_name)
-                                    # Skip complex objects
-                                    if isinstance(attr_value, (dict, list, object)) and not isinstance(attr_value, (int, float, str)):
-                                        continue
-                                    
-                                    raw_value = float(attr_value)
-                                    # FIXED SCALING: Properly map from 0-1 to 1-5 scale
-                                    scaled_value = 1.0 + raw_value * 4.0
-                                    metrics_dict[metric] = round(scaled_value, 2)
-                                    found = True
-                                    logging.info(f"Found metric {metric} as attribute {attr_name}, value: {raw_value}")
-                                    break
-                                except (ValueError, TypeError):
-                                    continue
-                        
-                        if found:
-                            break
-                
-                if not found:
-                    logging.warning(f"Metric {metric} not found in results attributes")
-                    metrics_dict[metric] = 3.0
-            
-            # Final fallback: use traces if available
-            if not metrics_dict and hasattr(results, 'traces') and results.traces:
-                try:
-                    logging.info("Trying traces attribute as final resort")
-                    traces = results.traces
-                    
-                    if isinstance(traces, list) and len(traces) > 0 and isinstance(traces[0], dict):
-                        first_trace = traces[0]
-                        for metric in self._metrics:
-                            if metric in first_trace:
-                                raw_value = float(first_trace[metric])
-                                # FIXED SCALING: Properly map from 0-1 to 1-5 scale
-                                scaled_value = 1.0 + raw_value * 4.0
-                                metrics_dict[metric] = round(scaled_value, 2)
-                                logging.info(f"Found metric {metric} in traces, value: {raw_value}")
-                            else:
-                                # Try alternate names
-                                found = False
-                                for alt_name in self.metric_name_map.get(metric, []):
-                                    if alt_name in first_trace:
-                                        raw_value = float(first_trace[alt_name])
-                                        # FIXED SCALING: Properly map from 0-1 to 1-5 scale
-                                        scaled_value = 1.0 + raw_value * 4.0
-                                        metrics_dict[metric] = round(scaled_value, 2)
-                                        logging.info(f"Found metric {metric} as {alt_name} in traces, value: {raw_value}")
-                                        found = True
-                                        break
-                                
-                                if not found:
-                                    logging.warning(f"Metric {metric} not found in traces dictionary")
-                                    metrics_dict[metric] = 3.0
-                except Exception as e:
-                    logging.warning(f"Traces extraction failed: {str(e)}")
-            
-            # If all extraction methods failed, use default values
-            if not metrics_dict:
-                logging.warning("All extraction methods failed. Setting default metrics.")
-                # Set default middle values
-                for metric in self._metrics:
-                    metrics_dict[metric] = 3.0
+                    # Convert back to 1-5 scale
+                    f1_score_scaled = 1.0 + f1_score * 4.0
+                    metrics_dict["f1_score"] = round(f1_score_scaled, 2)
+                else:
+                    metrics_dict["f1_score"] = 3.0  # Default middle value if components missing
             
             return metrics_dict
             
@@ -565,13 +457,12 @@ class RAGASEvaluator(BaseEvaluator):
             logging.error(traceback.format_exc())
             
             # Return default values on complete failure
-            default_metrics = {metric: 3.0 for metric in self._metrics}
-            return default_metrics
+            return {metric: 3.0 for metric in self._metrics}
     
     @property
     def supported_metrics(self) -> List[str]:
         """Return list of metrics supported by this evaluator"""
-        return list(self.ragas_metrics.keys())
+        return list(self.ragas_metrics.keys()) + ["f1_score"]
     
     @property
     def name(self) -> str:
@@ -1201,7 +1092,7 @@ class RAGASEvaluatorV2(BaseEvaluator):
             self._metrics = list(self._ragas_metrics.keys())
         else:
             # Validate provided metrics
-            invalid_metrics = [m for m in metrics if m not in self._ragas_metrics]
+            invalid_metrics = [m for m in metrics if m not in self._ragas_metrics and m != "f1_score"]
             if invalid_metrics:
                 raise ValueError(f"Unsupported metrics: {invalid_metrics}")
             self._metrics = metrics
@@ -1321,6 +1212,25 @@ class RAGASEvaluatorV2(BaseEvaluator):
             
             # Log final metrics
             logging.info(f"Final scaled metrics: {metrics_dict}")
+            
+            # Calculate F1 score if both context_recall and context_precision are available
+            if "f1_score" in self._metrics:
+                recall = metrics_dict.get("context_recall", 0)
+                precision = metrics_dict.get("context_precision", 0)
+                
+                if recall > 0 and precision > 0:
+                    # Convert from 1-5 scale to 0-1 scale for calculation
+                    recall_01 = (recall - 1) / 4
+                    precision_01 = (precision - 1) / 4
+                    
+                    # Calculate harmonic mean (F1 score)
+                    f1_score = 2 * (recall_01 * precision_01) / (recall_01 + precision_01)
+                    
+                    # Convert back to 1-5 scale
+                    f1_score_scaled = 1.0 + f1_score * 4.0
+                    metrics_dict["f1_score"] = round(f1_score_scaled, 2)
+                else:
+                    metrics_dict["f1_score"] = 3.0  # Default middle value if components missing
             
             return metrics_dict
             

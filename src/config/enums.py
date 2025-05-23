@@ -150,6 +150,7 @@ class EvaluationMetricType(Enum):
     ANSWER_CONSISTENCY = "answer_consistency"  # Custom metric
     CONTEXT_COVERAGE = "context_coverage"    # Custom metric
     CORRECTNESS = "answer_correctness"       # Adding RAGAS correctness metric
+    F1_SCORE = "f1_score"                   # Harmonic mean of context recall and relevance
     
     @classmethod
     def list(cls):
@@ -179,7 +180,8 @@ class EvaluationMetricType(Enum):
                 cls.CONTEXT_PRECISION.value,
                 cls.CONTEXT_RECALL.value,
                 cls.FAITHFULNESS.value,
-                cls.CORRECTNESS.value  # Add correctness here
+                cls.CORRECTNESS.value,  # Add correctness here
+                cls.F1_SCORE.value     # Add F1 score here
             ]
         elif backend_type == EvaluationBackendType.DEEP:
             return [

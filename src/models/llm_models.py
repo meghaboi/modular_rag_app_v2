@@ -17,6 +17,11 @@ class StreamingLLM(ABC):
         """Stream generate text from a prompt and optional context"""
         pass
 
+    @abstractmethod
+    def get_model_name(self) -> str:
+        """Get the name of the model"""
+        pass
+
 class OpenAIGPT(StreamingLLM):
     """OpenAI GPT model implementation with streaming support"""
     
@@ -39,7 +44,12 @@ class OpenAIGPT(StreamingLLM):
         self._model = ChatOpenAI(model_name=model_name, streaming=False)
         self._streaming_model = ChatOpenAI(model_name=model_name, streaming=True)
         self._jeff_system_prompt = jeff_system_prompt
+        self._model_name = model_name
     
+    def get_model_name(self) -> str:
+        """Get the name of the model"""
+        return self._model_name
+
     def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
         from langchain.prompts import ChatPromptTemplate
@@ -153,19 +163,24 @@ class GeminiLLM(StreamingLLM):
         Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
         
         self._model = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-exp", 
+            model="gemini-2.5-pro-preview-05-06", 
             google_api_key=os.environ.get("GEMINI_API_KEY"),
             streaming=False
         )
         
         self._streaming_model = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-exp", 
+            model="gemini-2.5-pro-preview-05-06", 
             google_api_key=os.environ.get("GEMINI_API_KEY"),
             streaming=True
         )
         
         self._jeff_system_prompt = jeff_system_prompt
+        self._model_name = "gemini-2.5-pro-preview-05-06"
     
+    def get_model_name(self) -> str:
+        """Get the name of the model"""
+        return self._model_name
+
     def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
         from langchain.prompts import ChatPromptTemplate
@@ -280,7 +295,12 @@ class ClaudeLLM(StreamingLLM):
         self._model = ChatAnthropic(model=model_name, system=jeff_system_prompt, streaming=False)
         self._streaming_model = ChatAnthropic(model=model_name, system=jeff_system_prompt, streaming=True)
         self._jeff_system_prompt = jeff_system_prompt
+        self._model_name = model_name
     
+    def get_model_name(self) -> str:
+        """Get the name of the model"""
+        return self._model_name
+
     def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
         from langchain.prompts import ChatPromptTemplate
@@ -402,7 +422,12 @@ class MistralLLM(StreamingLLM):
         self._model = ChatMistralAI(model=model_name, streaming=False)
         self._streaming_model = ChatMistralAI(model=model_name, streaming=True)
         self._jeff_system_prompt = jeff_system_prompt
+        self._model_name = model_name
     
+    def get_model_name(self) -> str:
+        """Get the name of the model"""
+        return self._model_name
+
     def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> str:
         """Generate text from a prompt and optional context"""
         from langchain.prompts import ChatPromptTemplate
