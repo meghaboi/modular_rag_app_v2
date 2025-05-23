@@ -182,7 +182,6 @@ class EvaluationMetricType(Enum):
                 cls.CONTEXT_PRECISION.value,
                 cls.CONTEXT_RECALL.value,
                 cls.FAITHFULNESS.value,
-                cls.ANSWER_CORRECTNESS.value,
                 cls.F1_SCORE.value
             ]
         elif backend_type == EvaluationBackendType.DEEP_EVAL:
@@ -197,7 +196,6 @@ class EvaluationMetricType(Enum):
         elif backend_type == EvaluationBackendType.RAGAS_V2:
             return [
                 cls.FAITHFULNESS.value,
-                cls.ANSWER_CORRECTNESS.value,
                 cls.CONTEXT_PRECISION.value,
                 cls.CONTEXT_RECALL.value,
                 cls.F1_SCORE.value

@@ -634,9 +634,10 @@ class RAGPipeline:
             from evaluator import EvaluatorFactory
             from enums import EvaluationBackendType, EvaluationMetricType
             
+            # Use RAGAS_V2 for consistency with permutation evaluations
             evaluator = EvaluatorFactory.create_evaluator(
-                EvaluationBackendType.RAGAS,
-                EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.RAGAS)
+                EvaluationBackendType.CUSTOM, 
+                EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.CUSTOM)
             )
             
             scores = evaluator.evaluate(

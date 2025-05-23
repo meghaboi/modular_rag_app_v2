@@ -12,6 +12,7 @@ from enums import (
     ChunkingStrategyType
 )
 from pipeline_utils import run_all_permutations
+from datetime import datetime
 
 def display_chat_interface():
     st.header("💬 Chat with JEFF")
@@ -332,12 +333,18 @@ def display_evaluation_interface():
             try: chunking_strategy_enum = ChunkingStrategyType.from_string(st.session_state.chunking_strategy)
             except ValueError as e: st.error(f"Invalid chunking strategy: {e}"); st.stop()
 
+            # Create a unique filename for the CSV output
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_csv_filename = f"permutation_results_{timestamp}.csv"
+            st.info(f"Results will be saved to {output_csv_filename}")
+
             with st.spinner("Running all permutations... This might take a while! ☕️"):
                  results_df, all_results = run_all_permutations(
                     file_path=st.session_state.file_path, user_query=user_query, ground_truth=ground_truth,
                     chunk_size=st.session_state.chunk_size, chunk_overlap=st.session_state.chunk_overlap,
                     top_k=st.session_state.top_k, hybrid_alpha=st.session_state.hybrid_alpha,
-                    chunking_strategy_enum=chunking_strategy_enum
+                    chunking_strategy_enum=chunking_strategy_enum,
+                    output_csv_file=output_csv_filename
                 )
             st.session_state.permutation_df = results_df
             st.session_state.permutation_results = all_results
@@ -351,7 +358,8 @@ def display_evaluation_interface():
     with col2:
         if st.session_state.permutation_df is not None and not st.session_state.permutation_df.empty:
             st.subheader("Permutation Results Summary")
-            st.markdown(get_csv_download_link(st.session_state.permutation_df), unsafe_allow_html=True)
+            st.markdown(f"Results have been saved to `{output_csv_filename}` in the application's root directory.")
+            st.markdown(get_csv_download_link(st.session_state.permutation_df, f"displayed_summary_{timestamp}.csv"), unsafe_allow_html=True)
 
             results_to_display = st.session_state.permutation_df.copy()
             results_to_display['avg_score_numeric'] = results_to_display['avg_score'].fillna(-1)

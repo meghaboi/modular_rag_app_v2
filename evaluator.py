@@ -271,36 +271,37 @@ class RAGASEvaluator(BaseEvaluator):
             import ragas
             from ragas.metrics import (
                 faithfulness,
-                answer_correctness,
+                # answer_correctness, # Removed as per user request
                 context_precision,
                 context_recall
             )
-            from datasets import Dataset
+            # Import class-based metrics for explicit LLM initialization
+            from ragas.metrics import Faithfulness, ContextPrecision, ContextRecall 
+            # AnswerCorrectness is not imported as it's being removed
         except ImportError as e:
             raise ValueError(f"Required library not installed: {e}")
         
-        # Store RAGAS metric objects
-        self.ragas_metrics = {
-            "faithfulness": faithfulness,
-            "answer_correctness": answer_correctness,
-            "context_precision": context_precision,
-            "context_recall": context_recall
+        # Initialize the LLM for RAGAS
+        from langchain_openai import ChatOpenAI
+        self._llm = ChatOpenAI(model_name="gpt-3.5-turbo")
+
+        # Configure RAGAS to use this LLM globally
+        ragas.llm = self._llm
+
+        # Store RAGAS metric objects, using class-based metrics initialized with the LLM
+        self._ragas_metrics = {
+            "faithfulness": Faithfulness(llm=self._llm),
+            # "answer_correctness": AnswerCorrectness(llm=self._llm), # Removed
+            "context_precision": ContextPrecision(llm=self._llm),
+            "context_recall": ContextRecall(llm=self._llm)
         }
         
-        # Map our metric names to potential RAGAS result attribute names
-        self.metric_name_map = {
-            "faithfulness": ["faithfulness", "ragas_faithfulness"],
-            "answer_correctness": ["answer_correctness", "answer_relevancy", "correctness"],
-            "context_precision": ["context_precision", "precision"],
-            "context_recall": ["context_recall", "recall"]
-        }
-        
-        # Use all metrics if none specified
+        # Use all metrics if none specified (answer_correctness is already excluded from _ragas_metrics)
         if metrics is None:
-            self._metrics = list(self.ragas_metrics.keys())
+            self._metrics = list(self._ragas_metrics.keys())
         else:
             # Validate provided metrics
-            invalid_metrics = [m for m in metrics if m not in self.ragas_metrics and m != "f1_score"]
+            invalid_metrics = [m for m in metrics if m not in self._ragas_metrics and m != "f1_score"]
             if invalid_metrics:
                 raise ValueError(f"Unsupported metrics: {invalid_metrics}")
             self._metrics = metrics
@@ -309,13 +310,9 @@ class RAGASEvaluator(BaseEvaluator):
         if not os.environ.get("OPENAI_API_KEY"):
             raise ValueError("OpenAI API key required for RAGAS evaluation")
         
-        # Initialize the LLM for RAGAS
-        from langchain_openai import ChatOpenAI
-        self.llm = ChatOpenAI(model_name="gpt-3.5-turbo")
-        
         # Configure RAGAS to use this LLM
         import ragas
-        ragas.llm = self.llm
+        ragas.llm = self._llm
     
     def evaluate(self, query: str, response: str, contexts: List[str], 
                 ground_truth: Optional[str] = None) -> Dict[str, float]:
@@ -341,7 +338,7 @@ class RAGASEvaluator(BaseEvaluator):
             
             # Configure RAGAS
             if not hasattr(ragas, 'llm') or ragas.llm is None:
-                ragas.llm = self.llm
+                ragas.llm = self._llm
             
             # Prepare data
             data = {
@@ -351,20 +348,17 @@ class RAGASEvaluator(BaseEvaluator):
             }
             
             if ground_truth:
-                data["ground_truths"] = [[ground_truth]]
-                
-                # Both naming conventions have been used in different RAGAS versions
+                data["ground_truths"] = [[ground_truth]] 
                 data["reference"] = [ground_truth]
-                data["references"] = [[ground_truth]]
             
             ds = Dataset.from_dict(data)
             
             # Get metrics
-            active_metrics = [self.ragas_metrics[metric] for metric in self._metrics 
-                            if metric in self.ragas_metrics]
+            active_metrics = [self._ragas_metrics[metric] for metric in self._metrics 
+                            if metric in self._ragas_metrics]
             
             # Run evaluation
-            results = ragas_evaluate(ds, metrics=active_metrics)
+            results = ragas_evaluate(ds, metrics=active_metrics, llm=self._llm)
             
             # Initialize metrics dictionary
             metrics_dict = {}
@@ -467,7 +461,7 @@ class RAGASEvaluator(BaseEvaluator):
     @property
     def supported_metrics(self) -> List[str]:
         """Return list of metrics supported by this evaluator"""
-        return list(self.ragas_metrics.keys()) + ["f1_score"]
+        return list(self._ragas_metrics.keys()) + ["f1_score"]
     
     @property
     def name(self) -> str:
@@ -1077,22 +1071,32 @@ class RAGASEvaluatorV2(BaseEvaluator):
             import ragas
             from ragas.metrics import (
                 faithfulness,
-                answer_correctness,
+                # answer_correctness, # Removed as per user request
                 context_precision,
                 context_recall
             )
+            # Import class-based metrics for explicit LLM initialization
+            from ragas.metrics import Faithfulness, ContextPrecision, ContextRecall 
+            # AnswerCorrectness is not imported as it's being removed
         except ImportError as e:
             raise ValueError(f"Required library not installed: {e}")
         
-        # Store RAGAS metric objects
+        # Initialize the LLM for RAGAS
+        from langchain_openai import ChatOpenAI
+        self._llm = ChatOpenAI(model_name="gpt-3.5-turbo")
+
+        # Configure RAGAS to use this LLM globally
+        ragas.llm = self._llm
+
+        # Store RAGAS metric objects, using class-based metrics initialized with the LLM
         self._ragas_metrics = {
-            "faithfulness": faithfulness,
-            "answer_correctness": answer_correctness,
-            "context_precision": context_precision,
-            "context_recall": context_recall
+            "faithfulness": Faithfulness(llm=self._llm),
+            # "answer_correctness": AnswerCorrectness(llm=self._llm), # Removed
+            "context_precision": ContextPrecision(llm=self._llm),
+            "context_recall": ContextRecall(llm=self._llm)
         }
         
-        # Use all metrics if none specified
+        # Use all metrics if none specified (answer_correctness is already excluded from _ragas_metrics)
         if metrics is None:
             self._metrics = list(self._ragas_metrics.keys())
         else:
@@ -1105,10 +1109,6 @@ class RAGASEvaluatorV2(BaseEvaluator):
         # Verify OpenAI API key exists for RAGAS
         if not os.environ.get("OPENAI_API_KEY"):
             raise ValueError("OpenAI API key required for RAGAS evaluation")
-        
-        # Initialize the LLM for RAGAS
-        from langchain_openai import ChatOpenAI
-        self._llm = ChatOpenAI(model_name="gpt-3.5-turbo")
         
         # Configure RAGAS to use this LLM
         import ragas
@@ -1146,8 +1146,9 @@ class RAGASEvaluatorV2(BaseEvaluator):
             }
             
             if ground_truth:
-                data["ground_truths"] = [[ground_truth]]
-                data["reference"] = [ground_truth]
+                # RAGAS expects ground_truths to be a list of lists of strings
+                data["ground_truths"] = [[ground_truth]] 
+                # Removed data["reference"] = [ground_truth] to avoid potential conflicts
             
             ds = Dataset.from_dict(data)
             
@@ -1263,21 +1264,28 @@ class RAGASEvaluatorV2(BaseEvaluator):
 
 
 class CustomEvaluator(BaseEvaluator):
-    """Custom evaluator using Gemini 2.5 Pro for evaluation"""
+    """Custom evaluator using a Claude model for evaluation"""
 
     def __init__(self, metrics: List[str]):
         """Initialize the custom evaluator"""
         super().__init__(metrics)
         try:
-            self._evaluator_model = ChatGoogleGenerativeAI(model="gemini-pro") # Using gemini-pro as 2.5 is not a model name, and -pro is usually latest
-            # You might need to set temperature or other parameters, e.g., temperature=0.0 for deterministic outputs
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                raise ValueError("ANTHROPIC_API_KEY environment variable not set. This is required for CustomEvaluator with Claude.")
+
+            from langchain_anthropic import ChatAnthropic
+            self._evaluator_model = ChatAnthropic(
+                model="claude-3-opus-20240229" 
+                # temperature=0.0 # For more deterministic outputs if needed
+            )
+        except ImportError:
+            raise ValueError("langchain_anthropic is not installed. Please install it to use Claude for custom evaluation.")
         except Exception as e:
-            print(f"Error initializing Gemini model: {e}. Evaluation will not work.")
+            print(f"Error initializing Claude model: {e}. Evaluation will not work.")
             self._evaluator_model = None
 
         if self._evaluator_model is None:
-            # This path should ideally not be taken if API key is set and library installed
-            raise ValueError("Gemini model could not be initialized. Please check API key and langchain_google_genai installation.")
+            raise ValueError("Claude model (claude-3-opus-20240229) could not be initialized. Please check ANTHROPIC_API_KEY and langchain_anthropic installation.")
 
     def _parse_llm_response_to_list(self, response_content: str, item_type: str = "statement") -> List[str]:
         """Parses LLM response (expected to be a list of items) into a Python list of strings."""
@@ -1662,7 +1670,7 @@ class CustomEvaluator(BaseEvaluator):
 
             Break down each answer into its core factual statements before comparison.
             Return the results as a JSON object with three keys: "TP", "FP", "FN", where each key maps to a list of strings (the statements).
-            Example: {"TP": ["Statement A is true."], "FP": ["Statement B is false."], "FN": ["Statement C was missed."]}
+            Example: {{"TP": ["Statement A is true."], "FP": ["Statement B is false."], "FN": ["Statement C was missed."]}}
 
             Ground Truth Answer:
             {ground_truth}
@@ -1735,11 +1743,11 @@ class CustomEvaluator(BaseEvaluator):
 
     @property
     def name(self) -> str:
-        return "Custom Gemini 2.5 Pro Evaluator"
+        return "Custom Claude Evaluator"
 
     @property
     def description(self) -> str:
-        return "Evaluator using Gemini 2.5 Pro for Context Recall, Answer Relevancy, Context Precision, Faithfulness, and Answer Correctness."
+        return "Evaluator using a Claude model for Context Recall, Answer Relevancy, Context Precision, Faithfulness, and Answer Correctness."
 
 
 class EvaluatorFactory:
