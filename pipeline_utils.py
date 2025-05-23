@@ -136,8 +136,8 @@ def run_pipeline_with_config(
         if ground_truth:
             try:
                 evaluator = EvaluatorFactory.create_evaluator(
-                    EvaluationBackendType.RAGAS,
-                    EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.RAGAS)
+                    EvaluationBackendType.CUSTOM,
+                    EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.CUSTOM)
                 )
                 evaluation_results = evaluator.evaluate(
                     query=user_query, response=response, contexts=contexts, ground_truth=ground_truth

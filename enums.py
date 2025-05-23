@@ -123,7 +123,9 @@ class EvaluationBackendType(Enum):
     BUILTIN = "Built-in Evaluator"
     RAGAS = "RAGAS"
     LANGSMITH = "LangSmith"
-    DEEP = "Deep"
+    DEEP_EVAL = "DeepEval"
+    RAGAS_V2 = "RAGAS_V2"
+    CUSTOM = "Custom"
 
     @classmethod
     def list(cls):
@@ -149,7 +151,7 @@ class EvaluationMetricType(Enum):
     CONTEXT_RECALL = "context_recall"        # RAGAS specific
     ANSWER_CONSISTENCY = "answer_consistency"  # Custom metric
     CONTEXT_COVERAGE = "context_coverage"    # Custom metric
-    CORRECTNESS = "answer_correctness"       # Adding RAGAS correctness metric
+    ANSWER_CORRECTNESS = "answer_correctness"
     F1_SCORE = "f1_score"                   # Harmonic mean of context recall and relevance
     
     @classmethod
@@ -180,10 +182,10 @@ class EvaluationMetricType(Enum):
                 cls.CONTEXT_PRECISION.value,
                 cls.CONTEXT_RECALL.value,
                 cls.FAITHFULNESS.value,
-                cls.CORRECTNESS.value,  # Add correctness here
-                cls.F1_SCORE.value     # Add F1 score here
+                cls.ANSWER_CORRECTNESS.value,
+                cls.F1_SCORE.value
             ]
-        elif backend_type == EvaluationBackendType.DEEP:
+        elif backend_type == EvaluationBackendType.DEEP_EVAL:
             return [
                 cls.ANSWER_RELEVANCE.value,
                 cls.CONTEXT_RELEVANCE.value,
@@ -191,6 +193,22 @@ class EvaluationMetricType(Enum):
                 cls.FAITHFULNESS.value,
                 cls.ANSWER_CONSISTENCY.value,
                 cls.CONTEXT_COVERAGE.value
+            ]
+        elif backend_type == EvaluationBackendType.RAGAS_V2:
+            return [
+                cls.FAITHFULNESS.value,
+                cls.ANSWER_CORRECTNESS.value,
+                cls.CONTEXT_PRECISION.value,
+                cls.CONTEXT_RECALL.value,
+                cls.F1_SCORE.value
+            ]
+        elif backend_type == EvaluationBackendType.CUSTOM:
+            return [
+                cls.CONTEXT_RECALL.value,
+                cls.CONTEXT_PRECISION.value,
+                cls.ANSWER_RELEVANCE.value,
+                cls.FAITHFULNESS.value,
+                cls.ANSWER_CORRECTNESS.value
             ]
         else:
             return []
