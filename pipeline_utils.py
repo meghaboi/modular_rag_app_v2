@@ -48,9 +48,18 @@ def initialize_pipeline(file_path, embedding_model_enum, vector_store_enum, rera
 
         reranker_instance = None
         if reranker_enum != RerankerModelType.NONE:
-            reranker_instance = RerankerFactory.create_reranker(reranker_enum)
+            if reranker_enum == RerankerModelType.LLM:
+                # Ensure llm_instance is created before reranker if LLM reranker is used
+                llm_instance = LLMFactory.create_llm(llm_enum) # This line might be redundant if llm_instance is already created
+                reranker_instance = RerankerFactory.create_reranker(reranker_enum, llm_client=llm_instance)
+            else:
+                reranker_instance = RerankerFactory.create_reranker(reranker_enum)
 
-        llm_instance = LLMFactory.create_llm(llm_enum)
+        # llm_instance might be created here if not LLM reranker, or it might already exist.
+        # Ensure llm_instance is defined before being used by RAGPipeline
+        if 'llm_instance' not in locals() or llm_instance is None: 
+            llm_instance = LLMFactory.create_llm(llm_enum)
+        
         chunking_strategy_instance = ChunkingStrategyFactory.get_strategy(chunking_strategy_enum.value)
 
         IsInEvaluationMode = False
@@ -134,29 +143,29 @@ def run_pipeline_with_config(
         query_elapsed_time = time.time() - start_query_time
         logging.info(f"Query processed in {query_elapsed_time:.2f}s. Response length: {len(response)}")
 
-        # Run evaluation
+        # Initialize evaluation results
         custom_evaluation_results = {}
         ragas_evaluation_results = {}
         avg_custom_score = 0
 
         if ground_truth:
-            # Custom Evaluation
-            try:
-                custom_evaluator = EvaluatorFactory.create_evaluator(
-                    EvaluationBackendType.CUSTOM,
-                    EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.CUSTOM)
-                )
-                custom_evaluation_results = custom_evaluator.evaluate(
-                    query=user_query, response=response, contexts=contexts, ground_truth=ground_truth
-                )
-                if custom_evaluation_results and isinstance(custom_evaluation_results, dict):
-                    valid_scores = [v for v in custom_evaluation_results.values() if isinstance(v, (int, float))]
-                    if valid_scores:
-                        avg_custom_score = sum(valid_scores) / len(valid_scores)
-                logging.info(f"Custom evaluation scores: {custom_evaluation_results}")
-            except Exception as eval_e:
-                logging.error(f"Error during Custom evaluation for config {config_str}: {eval_e}", exc_info=True)
-                custom_evaluation_results = {"error": str(eval_e)}
+            # Custom Evaluation - SKIPPED
+            # try:
+            #     custom_evaluator = EvaluatorFactory.create_evaluator(
+            #         EvaluationBackendType.CUSTOM,
+            #         EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.CUSTOM)
+            #     )
+            #     custom_evaluation_results = custom_evaluator.evaluate(
+            #         query=user_query, response=response, contexts=contexts, ground_truth=ground_truth
+            #     )
+            #     if custom_evaluation_results and isinstance(custom_evaluation_results, dict):
+            #         valid_scores = [v for v in custom_evaluation_results.values() if isinstance(v, (int, float))]
+            #         if valid_scores:
+            #             avg_custom_score = sum(valid_scores) / len(valid_scores)
+            #     logging.info(f"Custom evaluation scores: {custom_evaluation_results}")
+            # except Exception as eval_e:
+            #     logging.error(f"Error during Custom evaluation for config {config_str}: {eval_e}", exc_info=True)
+            #     custom_evaluation_results = {"error": str(eval_e)}
 
             # RAGAS Evaluation
             try:

@@ -32,6 +32,7 @@ class RerankerModelType(Enum):
     VOYAGE_2 = "Voyage-2"
     JINA = "Jina"
     JINA_V2 = "Jina-v2"
+    LLM = "LLM"
     
     @classmethod
     def list(cls) -> List[str]:
@@ -182,7 +183,7 @@ class EvaluationMetricType(Enum):
                 cls.CONTEXT_PRECISION.value,
                 cls.CONTEXT_RECALL.value,
                 cls.FAITHFULNESS.value,
-                cls.F1_SCORE.value
+                cls.ANSWER_CORRECTNESS.value  # Add correctness here
             ]
         elif backend_type == EvaluationBackendType.DEEP_EVAL:
             return [
@@ -198,7 +199,7 @@ class EvaluationMetricType(Enum):
                 cls.FAITHFULNESS.value,
                 cls.CONTEXT_PRECISION.value,
                 cls.CONTEXT_RECALL.value,
-                cls.F1_SCORE.value
+                cls.ANSWER_CORRECTNESS.value,
             ]
         elif backend_type == EvaluationBackendType.CUSTOM:
             return [

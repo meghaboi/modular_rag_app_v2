@@ -224,7 +224,7 @@ def display_evaluation_interface():
     elif not st.session_state.file_path:
          st.warning("💡 Upload a document first using the sidebar!")
 
-    col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns([1, 2])
 
     with col1:
         st.subheader("Evaluation Inputs")
@@ -286,10 +286,17 @@ def display_evaluation_interface():
                         with col2:
                             st.subheader("Evaluation Result (Current Config)")
                             st.markdown(f"**Configuration:** `{st.session_state.embedding_model} | {st.session_state.vector_store} | {st.session_state.reranker} | {st.session_state.llm_model} | {st.session_state.chunking_strategy}`")
-                            st.write(f"**Processing Time:** {eval_elapsed_time:.2f} seconds")
+                            
+                            # Layout for Time and Tokens using st.metric
+                            summary_metric_cols = st.columns(3)
+                            with summary_metric_cols[0]:
+                                st.metric(label="Processing Time", value=f"{eval_elapsed_time:.2f}s")
                             if metrics:
-                                st.write(f"**Input Tokens:** {metrics.get('input_tokens', 0)}")
-                                st.write(f"**Output Tokens:** {metrics.get('output_tokens', 0)}")
+                                with summary_metric_cols[1]:
+                                    st.metric(label="Input Tokens", value=metrics.get('input_tokens', "N/A"))
+                                with summary_metric_cols[2]:
+                                    st.metric(label="Output Tokens", value=metrics.get('output_tokens', "N/A"))
+
                             with st.expander("Response", expanded=True): st.write(response)
                             with st.expander("Retrieved Contexts", expanded=False):
                                  if contexts:
@@ -299,13 +306,18 @@ def display_evaluation_interface():
                             if evaluation_results and isinstance(evaluation_results, dict) and "error" not in evaluation_results:
                                  st.subheader("Evaluation Scores")
                                  if evaluation_results:
-                                     metric_cols = st.columns(len(evaluation_results))
-                                     i = 0
-                                     for metric, score in evaluation_results.items():
-                                         with metric_cols[i]:
-                                             score_display = f"{score:.2f}" if isinstance(score, (int, float)) else "N/A"
-                                             st.metric(label=metric.replace('_', ' ').title(), value=score_display)
-                                         i += 1
+                                     metrics_list = list(evaluation_results.items())
+                                     num_metrics = len(metrics_list)
+                                     metrics_per_row = 3 # Max 3 metrics per row
+
+                                     for i_loop_var in range(0, num_metrics, metrics_per_row):
+                                         current_row_metrics_data = metrics_list[i_loop_var : i_loop_var + metrics_per_row]
+                                         # Create columns for the current row of metrics
+                                         score_display_cols = st.columns(len(current_row_metrics_data))
+                                         for k_loop_var, (metric_name, metric_value) in enumerate(current_row_metrics_data):
+                                             with score_display_cols[k_loop_var]:
+                                                 score_val_display = f"{metric_value:.2f}" if isinstance(metric_value, (int, float)) else "N/A"
+                                                 st.metric(label=metric_name.replace('_', ' ').title(), value=score_val_display)
                                  else: st.info("No scores generated.")
                             elif "error" in evaluation_results: st.warning(f"Scores not calculated: {evaluation_results['error']}")
                             elif ground_truth: st.warning("Scores could not be calculated.")
@@ -371,7 +383,7 @@ def display_evaluation_interface():
 
             format_dict = {'avg_score': "{:.2f}", 'elapsed_time': "{:.2f}"}
             for col in metric_cols_exist: format_dict[col] = "{:.2f}"
-            st.dataframe(top_results[display_cols].style.format(format_dict, na_rep="N/A"))
+            st.dataframe(top_results[display_cols].style.format(format_dict, na_rep="N/A"), use_container_width=True)
 
             st.markdown("---")
             st.subheader("Explore Individual Results")

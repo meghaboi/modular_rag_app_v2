@@ -636,8 +636,8 @@ class RAGPipeline:
             
             # Use RAGAS_V2 for consistency with permutation evaluations
             evaluator = EvaluatorFactory.create_evaluator(
-                EvaluationBackendType.CUSTOM, 
-                EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.CUSTOM)
+                EvaluationBackendType.RAGAS_V2, 
+                EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.RAGAS_V2)
             )
             
             scores = evaluator.evaluate(

@@ -1,8 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import os
 from enums import RerankerModelType
 import requests
+from llm_models import StreamingLLM # Corrected import
+from llm_models import ClaudeLLM # Corrected import for Claude model
+import json # Add json import
 
 class Reranker(ABC):
     """Abstract base class for rerankers following Interface Segregation Principle"""
@@ -234,11 +237,99 @@ class JinaReranker(Reranker):
             print(f"Error in reranking with Jina: {str(e)}")
             return [(doc, 1.0) for doc in documents]  # Return original documents as fallback
 
+class LLMReranker(Reranker):
+    """LLM-based Reranker implementation"""
+
+    def __init__(self, llm_client: StreamingLLM, model_name: str = "claude-3-7-sonnet-20240708"):
+        """Initialize the LLM reranker
+        
+        Args:
+            llm_client: The LLM client to use for reranking.
+            model_name: The LLM model name to use.
+        """
+        self._llm_client = llm_client
+        self._model_name = model_name # Store the model name
+
+    def rerank(self, query: str, documents: List[str]) -> List[Tuple[str, float]]:
+        """Rerank documents based on relevance to the query using an LLM."""
+        if not documents:
+            return []
+
+        try:
+            # Construct a prompt for the LLM
+            prompt = f"Query: {query}\\n\\nDocuments to rerank (original indices provided):\\n"
+            for i, doc in enumerate(documents):
+                prompt += f"Index {i}: {doc}\\n" # Provide original index clearly
+            prompt += """\\nPlease rerank the documents above based on their relevance to the query.
+                Return a JSON string representing a list of objects, where each object has two keys: 'document_index' (the original index of the document as provided above) and 'relevance_score' (a float between 0.0 and 1.0, where 1.0 is most relevant).
+                The list should be sorted by relevance_score in descending order.
+
+                Example JSON output:
+                [
+                {"document_index": 2, "relevance_score": 0.95},
+                {"document_index": 0, "relevance_score": 0.88},
+                {"document_index": 1, "relevance_score": 0.75}
+                ]
+                """
+
+            response_text = self._llm_client.generate(prompt, context="", model_name=self._model_name) # Pass model_name
+            
+            # Parse the LLM's JSON response
+            try:
+                # The LLM might return the JSON string within a code block (e.g., ```json ... ```)
+                # or with other text. We need to extract the JSON part.
+                if "```json" in response_text:
+                    json_str = response_text.split("```json")[1].split("```")[0].strip()
+                elif "```" in response_text: # If no "json" tag, but still has backticks
+                    json_str = response_text.split("```")[1].split("```")[0].strip()
+                else:
+                    json_str = response_text.strip()
+
+                reranked_data = json.loads(json_str)
+            except json.JSONDecodeError as json_e:
+                print(f"Error decoding JSON from LLM response: {json_e}")
+                print(f"LLM Response Text: {response_text}")
+                # Fallback: return original documents if JSON parsing fails
+                return [(doc, 0.5) for doc in documents] # Use a neutral score
+
+            reranked_docs = []
+            seen_indices = set()
+            for item in reranked_data:
+                if isinstance(item, dict) and 'document_index' in item and 'relevance_score' in item:
+                    original_index = item['document_index']
+                    if isinstance(original_index, int) and 0 <= original_index < len(documents):
+                        if original_index not in seen_indices: # Ensure each document is added once
+                           reranked_docs.append((documents[original_index], float(item['relevance_score'])))
+                           seen_indices.add(original_index)
+                        else:
+                            print(f"Warning: Duplicate document_index {original_index} in LLM response. Skipping.")
+                    else:
+                        print(f"Warning: Invalid document_index {original_index} in LLM response. Skipping.")
+                else:
+                    print(f"Warning: Malformed item in LLM response: {item}. Skipping.")
+
+            # Ensure all original documents are present if LLM missed some, append with low score
+            if len(reranked_docs) < len(documents):
+                print("Warning: LLM reranker did not return all documents. Appending missing ones with low score.")
+                for i, doc in enumerate(documents):
+                    if i not in seen_indices:
+                        reranked_docs.append((doc, 0.1)) # Assign a low score for missing docs
+
+            # Sort by score in descending order, as a final safety measure
+            reranked_docs = sorted(reranked_docs, key=lambda x: x[1], reverse=True)
+
+            return reranked_docs
+
+        except Exception as e:
+            print(f"Error in reranking with LLM: {str(e)}")
+            # Fallback: return original documents with a default score
+            return [(doc, 1.0) for doc in documents]
+
 class RerankerFactory:
     """Factory for creating rerankers (Factory Pattern)"""
 
     @staticmethod
-    def create_reranker(reranker_name: str) -> Reranker:
+    def create_reranker(reranker_name: str, llm_client: Optional[StreamingLLM] = None) -> Reranker:
         """Create a reranker based on the reranker name"""
         if reranker_name == RerankerModelType.COHERE_V2:
             return CohereRerankerV2()
@@ -254,5 +345,10 @@ class RerankerFactory:
             return JinaReranker(model_name="jina-reranker-v1-base-en")
         elif reranker_name == RerankerModelType.JINA_V2:
             return JinaReranker(model_name="jina-colbert-v2")
+        elif reranker_name == RerankerModelType.LLM:
+            if not llm_client:
+                 # Default to ClaudeLLM if no client is provided
+                llm_client = ClaudeLLM(model_name="claude-3-7-sonnet-20240708") # Use ClaudeLLM
+            return LLMReranker(llm_client=llm_client)
         else:
             raise ValueError(f"Unsupported reranker: {reranker_name}")

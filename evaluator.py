@@ -281,19 +281,12 @@ class RAGASEvaluator(BaseEvaluator):
         except ImportError as e:
             raise ValueError(f"Required library not installed: {e}")
         
-        # Initialize the LLM for RAGAS
-        from langchain_openai import ChatOpenAI
-        self._llm = ChatOpenAI(model_name="gpt-3.5-turbo")
-
-        # Configure RAGAS to use this LLM globally
-        ragas.llm = self._llm
-
         # Store RAGAS metric objects, using class-based metrics initialized with the LLM
         self._ragas_metrics = {
-            "faithfulness": Faithfulness(llm=self._llm),
+            "faithfulness": Faithfulness(),
             # "answer_correctness": AnswerCorrectness(llm=self._llm), # Removed
-            "context_precision": ContextPrecision(llm=self._llm),
-            "context_recall": ContextRecall(llm=self._llm)
+            "context_precision": ContextPrecision(),
+            "context_recall": ContextRecall()
         }
         
         # Use all metrics if none specified (answer_correctness is already excluded from _ragas_metrics)
@@ -336,9 +329,6 @@ class RAGASEvaluator(BaseEvaluator):
             from ragas import evaluate as ragas_evaluate
             import pandas as pd
             
-            # Configure RAGAS
-            if not hasattr(ragas, 'llm') or ragas.llm is None:
-                ragas.llm = self._llm
             
             # Prepare data
             data = {
@@ -358,7 +348,7 @@ class RAGASEvaluator(BaseEvaluator):
                             if metric in self._ragas_metrics]
             
             # Run evaluation
-            results = ragas_evaluate(ds, metrics=active_metrics, llm=self._llm)
+            results = ragas_evaluate(ds, metrics=active_metrics)
             
             # Initialize metrics dictionary
             metrics_dict = {}
@@ -1071,37 +1061,27 @@ class RAGASEvaluatorV2(BaseEvaluator):
             import ragas
             from ragas.metrics import (
                 faithfulness,
-                # answer_correctness, # Removed as per user request
+                answer_correctness,
                 context_precision,
                 context_recall
             )
-            # Import class-based metrics for explicit LLM initialization
-            from ragas.metrics import Faithfulness, ContextPrecision, ContextRecall 
-            # AnswerCorrectness is not imported as it's being removed
         except ImportError as e:
             raise ValueError(f"Required library not installed: {e}")
         
-        # Initialize the LLM for RAGAS
-        from langchain_openai import ChatOpenAI
-        self._llm = ChatOpenAI(model_name="gpt-3.5-turbo")
-
-        # Configure RAGAS to use this LLM globally
-        ragas.llm = self._llm
-
-        # Store RAGAS metric objects, using class-based metrics initialized with the LLM
+        # Store RAGAS metric objects
         self._ragas_metrics = {
-            "faithfulness": Faithfulness(llm=self._llm),
-            # "answer_correctness": AnswerCorrectness(llm=self._llm), # Removed
-            "context_precision": ContextPrecision(llm=self._llm),
-            "context_recall": ContextRecall(llm=self._llm)
+            "faithfulness": faithfulness,
+            "answer_correctness": answer_correctness,
+            "context_precision": context_precision,
+            "context_recall": context_recall
         }
         
-        # Use all metrics if none specified (answer_correctness is already excluded from _ragas_metrics)
+        # Use all metrics if none specified
         if metrics is None:
             self._metrics = list(self._ragas_metrics.keys())
         else:
             # Validate provided metrics
-            invalid_metrics = [m for m in metrics if m not in self._ragas_metrics and m != "f1_score"]
+            invalid_metrics = [m for m in metrics if m not in self._ragas_metrics]
             if invalid_metrics:
                 raise ValueError(f"Unsupported metrics: {invalid_metrics}")
             self._metrics = metrics
@@ -1109,6 +1089,10 @@ class RAGASEvaluatorV2(BaseEvaluator):
         # Verify OpenAI API key exists for RAGAS
         if not os.environ.get("OPENAI_API_KEY"):
             raise ValueError("OpenAI API key required for RAGAS evaluation")
+        
+        # Initialize the LLM for RAGAS
+        from langchain_openai import ChatOpenAI
+        self._llm = ChatOpenAI(model_name="gpt-3.5-turbo")
         
         # Configure RAGAS to use this LLM
         import ragas
@@ -1146,9 +1130,8 @@ class RAGASEvaluatorV2(BaseEvaluator):
             }
             
             if ground_truth:
-                # RAGAS expects ground_truths to be a list of lists of strings
-                data["ground_truths"] = [[ground_truth]] 
-                # Removed data["reference"] = [ground_truth] to avoid potential conflicts
+                data["ground_truths"] = [[ground_truth]]
+                data["reference"] = [ground_truth]
             
             ds = Dataset.from_dict(data)
             
@@ -1219,25 +1202,6 @@ class RAGASEvaluatorV2(BaseEvaluator):
             # Log final metrics
             logging.info(f"Final scaled metrics: {metrics_dict}")
             
-            # Calculate F1 score if both context_recall and context_precision are available
-            if "f1_score" in self._metrics:
-                recall = metrics_dict.get("context_recall", 0)
-                precision = metrics_dict.get("context_precision", 0)
-                
-                if recall > 0 and precision > 0:
-                    # Convert from 1-5 scale to 0-1 scale for calculation
-                    recall_01 = (recall - 1) / 4
-                    precision_01 = (precision - 1) / 4
-                    
-                    # Calculate harmonic mean (F1 score)
-                    f1_score = 2 * (recall_01 * precision_01) / (recall_01 + precision_01)
-                    
-                    # Convert back to 1-5 scale
-                    f1_score_scaled = 1.0 + f1_score * 4.0
-                    metrics_dict["f1_score"] = round(f1_score_scaled, 2)
-                else:
-                    metrics_dict["f1_score"] = 3.0  # Default middle value if components missing
-            
             return metrics_dict
             
         except Exception as e:
@@ -1252,7 +1216,7 @@ class RAGASEvaluatorV2(BaseEvaluator):
     @property
     def supported_metrics(self) -> List[str]:
         """Return list of metrics supported by this evaluator"""
-        return list(self._ragas_metrics.keys()) + ["f1_score"]
+        return list(self._ragas_metrics.keys())
     
     @property
     def name(self) -> str:
@@ -1261,7 +1225,6 @@ class RAGASEvaluatorV2(BaseEvaluator):
     @property
     def description(self) -> str:
         return "Uses RAGAS framework to evaluate RAG system performance with improved result handling"
-
 
 class CustomEvaluator(BaseEvaluator):
     """Custom evaluator using a Claude model for evaluation"""
