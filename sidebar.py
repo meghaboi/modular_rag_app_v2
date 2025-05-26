@@ -65,6 +65,15 @@ def display_settings_panel():
         logging.info(f"Mode changed to: {st.session_state.mode}. Resetting state.")
         st.rerun()
 
+    st.sidebar.markdown("---") # Optional separator
+    st.session_state.smarter_jeff_enabled = st.sidebar.toggle(
+        "✨ Smarter-Jeff Mode", 
+        value=st.session_state.get('smarter_jeff_enabled', False), 
+        key="smarter_jeff_toggle", 
+        help="Let JEFF automatically optimize settings based on your query. Manual controls below will be disabled."
+    )
+    st.sidebar.markdown("---") # Optional separator
+
     st.sidebar.header("📚 Load Textbook")
     uploaded_file = st.sidebar.file_uploader("Upload .txt file", type=['txt'], key="file_uploader")
     if uploaded_file is not None:
@@ -106,6 +115,7 @@ def display_settings_panel():
 
     with st.sidebar.expander("RAG Configuration Details", expanded=config_expander_expanded):
         disable_widgets = (st.session_state.mode == "chat")
+        smarter_jeff_is_enabled = st.session_state.get('smarter_jeff_enabled', False) # Get current state
         embedding_options = EmbeddingModelType.list()
         reranker_options = RerankerModelType.list()
         llm_options = LLMModelType.list()
@@ -116,11 +126,11 @@ def display_settings_panel():
              try: return options_list.index(current_value)
              except ValueError: return default_index
 
-        st.session_state.embedding_model = st.selectbox("Embedding Model", options=embedding_options, index=get_safe_index(embedding_options, st.session_state.embedding_model), key="sb_embedding_model", disabled=disable_widgets)
-        st.session_state.reranker = st.selectbox("Re-ranker Model", options=reranker_options, index=get_safe_index(reranker_options, st.session_state.reranker), key="sb_reranker", disabled=disable_widgets)
-        st.session_state.llm_model = st.selectbox("LLM Model", options=llm_options, index=get_safe_index(llm_options, st.session_state.llm_model), key="sb_llm_model", disabled=disable_widgets)
-        st.session_state.vector_store = st.selectbox("Vector Store", options=vector_store_options, index=get_safe_index(vector_store_options, st.session_state.vector_store), key="sb_vector_store", disabled=disable_widgets)
-        st.session_state.chunking_strategy = st.selectbox("Chunking Strategy", options=chunking_strategy_options, index=get_safe_index(chunking_strategy_options, st.session_state.chunking_strategy), key="sb_chunking_strategy", disabled=disable_widgets)
+        st.session_state.embedding_model = st.selectbox("Embedding Model", options=embedding_options, index=get_safe_index(embedding_options, st.session_state.embedding_model), key="sb_embedding_model", disabled=(disable_widgets or smarter_jeff_is_enabled))
+        st.session_state.reranker = st.selectbox("Re-ranker Model", options=reranker_options, index=get_safe_index(reranker_options, st.session_state.reranker), key="sb_reranker", disabled=(disable_widgets or smarter_jeff_is_enabled))
+        st.session_state.llm_model = st.selectbox("LLM Model", options=llm_options, index=get_safe_index(llm_options, st.session_state.llm_model), key="sb_llm_model", disabled=(disable_widgets or smarter_jeff_is_enabled))
+        st.session_state.vector_store = st.selectbox("Vector Store", options=vector_store_options, index=get_safe_index(vector_store_options, st.session_state.vector_store), key="sb_vector_store", disabled=(disable_widgets or smarter_jeff_is_enabled))
+        st.session_state.chunking_strategy = st.selectbox("Chunking Strategy", options=chunking_strategy_options, index=get_safe_index(chunking_strategy_options, st.session_state.chunking_strategy), key="sb_chunking_strategy", disabled=(disable_widgets or smarter_jeff_is_enabled))
 
         try: 
             selected_strategy_enum = ChunkingStrategyType.from_string(st.session_state.chunking_strategy)
@@ -139,7 +149,7 @@ def display_settings_panel():
             value=subject_config.chunk_size, 
             step=50, 
             key="sb_chunk_size", 
-            disabled=disable_widgets,
+            disabled=(disable_widgets or smarter_jeff_is_enabled),
             help="Maximum number of tokens per chunk"
         )
         
@@ -150,7 +160,7 @@ def display_settings_panel():
             value=subject_config.chunk_overlap, 
             step=25, 
             key="sb_chunk_overlap", 
-            disabled=disable_widgets, 
+            disabled=(disable_widgets or smarter_jeff_is_enabled), 
             help="Number of tokens to overlap between chunks"
         )
         
@@ -161,7 +171,7 @@ def display_settings_panel():
             value=subject_config.top_k if hasattr(subject_config, 'top_k') else DEFAULT_TOP_K, 
             step=1, 
             key="sb_top_k", 
-            disabled=disable_widgets
+            disabled=(disable_widgets or smarter_jeff_is_enabled)
         )
 
         try: selected_vector_store_enum = VectorStoreType.from_string(st.session_state.vector_store)
@@ -175,7 +185,7 @@ def display_settings_panel():
                  subject_config.hybrid_alpha if hasattr(subject_config, 'hybrid_alpha') else DEFAULT_HYBRID_ALPHA, 
                  0.05, 
                  key="sb_hybrid_alpha", 
-                 disabled=disable_widgets, 
+                 disabled=(disable_widgets or smarter_jeff_is_enabled), 
                  help="1.0=vector, 0.0=keyword"
              )
              kw_weight = 1.0 - float(st.session_state.get('hybrid_alpha', 0.5))
@@ -252,7 +262,33 @@ def display_settings_panel():
     st.sidebar.markdown("---")
     disable_init = not st.session_state.file_path
     if st.sidebar.button("🚀 Initialize JEFF", key="init_pipeline", help="Load textbook with current settings.", disabled=disable_init):
+        
+        use_ai_config = False
+        if st.session_state.get('smarter_jeff_enabled', False) and 'ai_suggested_config' in st.session_state:
+            ai_config = st.session_state.ai_suggested_config
+            if ai_config and isinstance(ai_config, dict): # Ensure it's a valid dict
+                logging.info("Initialize JEFF button: Smarter-Jeff is ON and AI config found. Using AI config.")
+                
+                # Override session state values that initialize_pipeline will use
+                # with values from ai_suggested_config, just before they are read.
+                # These session_state variables are directly used by the try-except block below.
+                st.session_state.embedding_model = ai_config.get("embedding_model", st.session_state.get('embedding_model', DEFAULT_EMBEDDING_MODEL.value))
+                st.session_state.vector_store = ai_config.get("vector_store", st.session_state.get('vector_store', DEFAULT_VECTOR_STORE.value))
+                st.session_state.reranker = ai_config.get("reranker", st.session_state.get('reranker', DEFAULT_RERANKER_MODEL.value))
+                st.session_state.llm_model = ai_config.get("llm_model", st.session_state.get('llm_model', DEFAULT_LLM_MODEL.value))
+                st.session_state.chunking_strategy = ai_config.get("chunking_strategy", st.session_state.get('chunking_strategy', DEFAULT_CHUNKING_STRATEGY.value))
+                st.session_state.hybrid_alpha = float(ai_config.get("hybrid_alpha", st.session_state.get('hybrid_alpha', DEFAULT_HYBRID_ALPHA)))
+                st.session_state.chunk_size = int(ai_config.get("chunk_size", st.session_state.get('chunk_size', DEFAULT_CHUNK_SIZE)))
+                st.session_state.chunk_overlap = int(ai_config.get("chunk_overlap", st.session_state.get('chunk_overlap', DEFAULT_CHUNK_OVERLAP)))
+                st.session_state.top_k = int(ai_config.get("top_k", st.session_state.get('top_k', DEFAULT_TOP_K)))
+                use_ai_config = True
+            else:
+                logging.info("Initialize JEFF button: Smarter-Jeff is ON but AI_suggested_config is invalid or empty. Using manual/default settings.")
+        else:
+            logging.info("Initialize JEFF button: Smarter-Jeff is OFF or no AI config. Using manual/default settings.")
+
         try: 
+            # These will now use the potentially overridden values from ai_config if use_ai_config is True
             embedding_val = st.session_state.get('embedding_model', DEFAULT_EMBEDDING_MODEL.value)
             vs_val = st.session_state.get('vector_store', DEFAULT_VECTOR_STORE.value)
             reranker_val = st.session_state.get('reranker', DEFAULT_RERANKER_MODEL.value)

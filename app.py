@@ -39,6 +39,8 @@ if 'permutation_df' not in st.session_state:
     st.session_state.permutation_df = None
 if 'api_key_status' not in st.session_state:
     st.session_state.api_key_status = None
+if 'smarter_jeff_enabled' not in st.session_state:
+    st.session_state.smarter_jeff_enabled = False
 
 # Set default configuration values
 if 'embedding_model' not in st.session_state:

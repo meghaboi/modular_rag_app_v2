@@ -4,6 +4,8 @@ import time
 import itertools
 from typing import List, Dict, Any
 from utils import text_to_speech, is_greeting, check_api_keys, get_csv_download_link
+from ai_configurator import get_ai_suggested_config, DEFAULT_SMARTER_JEFF_CONFIG
+from pipeline_utils import initialize_pipeline # To trigger re-initialization
 from enums import (
     EmbeddingModelType,
     RerankerModelType,
@@ -80,6 +82,102 @@ def display_chat_interface():
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
             st.write(user_query)
+
+    # --- BEGIN SMARTER-JEFF INTEGRATION ---
+    if st.session_state.get('smarter_jeff_enabled', False):
+        logging.info("Smarter-Jeff mode is ON. Attempting to get AI suggested config.")
+        
+        # Gather current RAG config from session_state to pass to AI
+        current_rag_config = {
+            "embedding_model": st.session_state.get('embedding_model', DEFAULT_SMARTER_JEFF_CONFIG['embedding_model']),
+            "vector_store": st.session_state.get('vector_store', DEFAULT_SMARTER_JEFF_CONFIG['vector_store']),
+            "reranker": st.session_state.get('reranker', DEFAULT_SMARTER_JEFF_CONFIG['reranker']),
+            "llm_model": st.session_state.get('llm_model', DEFAULT_SMARTER_JEFF_CONFIG['llm_model']),
+            "chunking_strategy": st.session_state.get('chunking_strategy', DEFAULT_SMARTER_JEFF_CONFIG['chunking_strategy']),
+            "hybrid_alpha": float(st.session_state.get('hybrid_alpha', DEFAULT_SMARTER_JEFF_CONFIG['hybrid_alpha'])),
+            "chunk_size": int(st.session_state.get('chunk_size', DEFAULT_SMARTER_JEFF_CONFIG['chunk_size'])),
+            "chunk_overlap": int(st.session_state.get('chunk_overlap', DEFAULT_SMARTER_JEFF_CONFIG['chunk_overlap'])),
+            "top_k": int(st.session_state.get('top_k', DEFAULT_SMARTER_JEFF_CONFIG['top_k']))
+        }
+
+        ai_suggested_config = get_ai_suggested_config(user_query, current_rag_config)
+        st.session_state.ai_suggested_config = ai_suggested_config # Store for potential use in sidebar initialization
+
+        # Define parameters that trigger re-indexing if changed
+        reindex_params = ["embedding_model", "vector_store", "chunking_strategy", "chunk_size", "chunk_overlap"]
+        
+        requires_reinitialization = False
+        if st.session_state.pipeline is None: # If no pipeline, AI config means we need to init
+            requires_reinitialization = True
+        else:
+            for param in reindex_params:
+                if str(current_rag_config.get(param)) != str(ai_suggested_config.get(param)): # Compare as strings for enums
+                    requires_reinitialization = True
+                    logging.info(f"Smarter-Jeff: Change in '{param}' (from '{current_rag_config.get(param)}' to '{ai_suggested_config.get(param)}') requires re-initialization.")
+                    break
+            if not requires_reinitialization: # Check non-reindexing params
+                non_reindex_params = ["reranker", "llm_model", "top_k", "hybrid_alpha"]
+                for param in non_reindex_params:
+                    if str(current_rag_config.get(param)) != str(ai_suggested_config.get(param)):
+                         requires_reinitialization = True
+                         logging.info(f"Smarter-Jeff: Change in '{param}' (from '{current_rag_config.get(param)}' to '{ai_suggested_config.get(param)}') will also trigger re-initialization for now.")
+                         break
+
+        if requires_reinitialization:
+            logging.info("Smarter-Jeff: AI suggested changes require pipeline re-initialization.")
+            
+            st.session_state.embedding_model = ai_suggested_config["embedding_model"]
+            st.session_state.vector_store = ai_suggested_config["vector_store"]
+            st.session_state.reranker = ai_suggested_config["reranker"]
+            st.session_state.llm_model = ai_suggested_config["llm_model"]
+            st.session_state.chunking_strategy = ai_suggested_config["chunking_strategy"]
+            st.session_state.hybrid_alpha = float(ai_suggested_config["hybrid_alpha"])
+            st.session_state.chunk_size = int(ai_suggested_config["chunk_size"])
+            st.session_state.chunk_overlap = int(ai_suggested_config["chunk_overlap"])
+            st.session_state.top_k = int(ai_suggested_config["top_k"])
+
+            if not st.session_state.get('file_path'):
+                warning_msg = "Smarter-Jeff wants to reconfigure, but no textbook is loaded. Please upload a textbook first."
+                # Display warning similar to existing pipeline warning (simplified here)
+                st.warning(warning_msg) 
+                # This will be caught by the subsequent "if st.session_state.pipeline is None:" check if it remains None
+            else:
+                with st.spinner("Smarter-Jeff is optimizing settings for your query. JEFF is re-initializing..."):
+                    try:
+                        embedding_enum = EmbeddingModelType.from_string(st.session_state.embedding_model)
+                        vs_enum = VectorStoreType.from_string(st.session_state.vector_store)
+                        reranker_enum = RerankerModelType.from_string(st.session_state.reranker)
+                        llm_enum = LLMModelType.from_string(st.session_state.llm_model)
+                        cs_enum = ChunkingStrategyType.from_string(st.session_state.chunking_strategy)
+
+                        pipeline_instance = initialize_pipeline(
+                            file_path=st.session_state.file_path,
+                            embedding_model_enum=embedding_enum,
+                            vector_store_enum=vs_enum,
+                            reranker_enum=reranker_enum,
+                            llm_enum=llm_enum,
+                            chunking_strategy_enum=cs_enum,
+                            hybrid_alpha=st.session_state.hybrid_alpha,
+                            chunk_size=st.session_state.chunk_size,
+                            chunk_overlap=st.session_state.chunk_overlap,
+                            top_k=st.session_state.top_k
+                        )
+                        if pipeline_instance:
+                            st.session_state.pipeline = pipeline_instance
+                            logging.info("Smarter-Jeff: Pipeline re-initialized successfully with AI config.")
+                            # Show success message in the chat area, not sidebar
+                            st.chat_message("assistant").success("JEFF has been reconfigured by Smarter-Jeff for your query!")
+                        else:
+                            st.session_state.pipeline = None
+                            logging.error("Smarter-Jeff: Pipeline re-initialization failed.")
+                            st.chat_message("assistant").error("Smarter-Jeff failed to reconfigure the pipeline. Using previous settings if available.")
+                    except Exception as e:
+                        logging.error(f"Smarter-Jeff: Error during re-initialization: {e}", exc_info=True)
+                        st.chat_message("assistant").error(f"Smarter-Jeff: Error reconfiguring: {e}")
+        else:
+            logging.info("Smarter-Jeff: AI suggested config does not require re-initialization or no changes suggested.")
+
+    # --- END SMARTER-JEFF INTEGRATION ---
 
         if st.session_state.pipeline is None:
             logging.warning("Chat query received, but pipeline not initialized.")
