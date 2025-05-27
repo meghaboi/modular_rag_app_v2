@@ -44,31 +44,33 @@ class TokenCounter:
 class TokenCostManager:
     # Pricing per 1000 tokens (input, output)
     # These are example prices and should be verified and updated with actuals.
+    # Model names listed here should correspond to the output of `llm.get_model_name()`
+    # after normalization (lower(), replace(' ', '-')).
     PRICING_DATA = {
         # OpenAI - Prices per 1M tokens, converted to per 1K tokens
-        "openai-gpt-4": {"input": 0.03, "output": 0.06},  # $30/1M input, $60/1M output
+        "gpt-4": {"input": 0.03, "output": 0.06},  # $30/1M input, $60/1M output
         "gpt-4-32k": {"input": 0.06, "output": 0.12}, # $60/1M input, $120/1M output
         "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015}, # $0.50/1M input, $1.50/1M output (e.g. gpt-3.5-turbo-0125)
-        "gpt-3.5-turbo-16k": {"input": 0.003, "output": 0.004}, # Older model, check if still relevant or map to current gpt-3.5-turbo
+        "gpt-3.5-turbo-16k": {"input": 0.003, "output": 0.004}, # Older model, may be covered by gpt-3.5-turbo with startswith
         
         # Anthropic - Prices per 1M tokens, converted to per 1K tokens
-        "claude-instant-1.2": {"input": 0.0008, "output": 0.0024}, # $0.80/1M input, $2.40/1M output (Claude Instant)
-        "claude-2": {"input": 0.008, "output": 0.024}, # $8/1M input, $24/1M output (Claude 2.0)
-        "claude-2.1": {"input": 0.008, "output": 0.024}, # $8/1M input, $24/1M output (Claude 2.1)
-        "claude-3-opus-20240229": {"input": 0.015, "output": 0.075}, # $15/1M input, $75/1M output
-        "claude-3-sonnet-20240229": {"input": 0.003, "output": 0.015},# $3/1M input, $15/1M output
-        "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},# $0.25/1M input, $1.25/1M output
-        "claude-3.7-sonnet": {"input": 0.003, "output": 0.015}, # Added alias for UI model name
+        "claude-instant-1.2": {"input": 0.0008, "output": 0.0024}, 
+        "claude-2": {"input": 0.008, "output": 0.024}, 
+        "claude-2.1": {"input": 0.008, "output": 0.024}, 
+        "claude-3-opus-20240229": {"input": 0.015, "output": 0.075}, 
+        "claude-3-sonnet-20240229": {"input": 0.003, "output": 0.015},
+        "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
+        "claude-3-7-sonnet-20250219": {"input": 0.003, "output": 0.015}, # Specific version used by factory
         
-        # Google - Prices per 1K characters for input, per 1K characters for output for Gemini 1.0 Pro (free for now, then characters)
-        # For token-based models like Gemini 1.5 Pro (preview pricing as of March 2024)
-        # Gemini 1.5 Pro: $7 per 1M tokens input, $21 per 1M tokens output (for >128K context)
-        # $3.50 per 1M tokens input, $10.50 per 1M tokens output (for <=128K context)
-        # For simplicity, using a general token-based example for gemini-pro, assuming conversion or specific model variant
-        "gemini": {"input": 0.000125, "output": 0.000375}, # Example, actual Gemini pricing is complex (characters/tokens, free tiers)
-        "gemini-1.5-pro-latest": {"input": 0.0035, "output": 0.0105}, # Using <=128k context window price
+        # Google
+        # Gemini 1.5 Flash: $0.35/1M input, $0.70/1M output (for <128K context) -> 0.00035 / 0.00070 per 1K
+        "gemini-1.5-flash": {"input": 0.00035, "output": 0.00070}, # Used by factory
+        # Gemini 1.5 Pro: $3.50 per 1M tokens input, $10.50 per 1M tokens output (for <=128K context)
+        "gemini-1.5-pro-latest": {"input": 0.0035, "output": 0.0105}, 
+        # Older "gemini" entry, pricing might be for early gemini-pro or other variant. Keeping for now.
+        "gemini": {"input": 0.000125, "output": 0.000375}, 
 
-        # Mistral AI - Platform prices per 1M tokens (EUR converted to USD approx) 
+        # Mistral AI - Platform prices per 1M tokens (EUR converted to USD approx)
         # open-mistral-7b (Mistral Tiny): ~€0.23/1M in, ~€0.23/1M out => ~$0.00025/1k
         # mistral-small-2402 (Mixtral 8x7B): ~€0.69/1M in, ~€2.08/1M out => ~$0.00075/$0.00227 per 1k
         # mistral-medium-2312: ~€2.52/1M in, ~€7.57/1M out => ~$0.00275/$0.00825 per 1k
@@ -89,8 +91,9 @@ class TokenCostManager:
         if not model_name:
             return 0.0
             
-        # Normalize model name for matching (e.g. session state might have 'Claude 3 Opus')
-        # This is a simple normalization, might need more sophisticated mapping
+        # Normalize model name for matching.
+        # Expected format from llm.get_model_name() is typically like 'gpt-4', 'claude-3-opus-20240229', etc.
+        # Normalization handles potential spaces (though not common in current names) and ensures lowercase.
         normalized_model_name = model_name.lower().replace(' ', '-')
         
         model_pricing = TokenCostManager.PRICING_DATA.get(normalized_model_name)

@@ -301,24 +301,23 @@ def display_evaluation_interface():
                                 with summary_metric_cols[2]:
                                     st.metric(label="Output Tokens", value=output_tokens)
                                 
-                                # Calculate and display LLM Cost
+                                # Display LLM Cost from evaluation_results or metrics
                                 with summary_metric_cols[3]:
-                                    llm_model_name_str = st.session_state.llm_model # Get current LLM model string
-                                    # Ensure llm_model_name_str is valid for TokenCostManager
-                                    # This might involve mapping from the display name to the one TokenCostManager expects if they differ
-                                    # For now, assume it's directly usable or TokenCostManager handles variations.
-                                                                        
-                                    # DEBUG PRINTS
-                                    print(f"UI DEBUG: LLM Model Name for Cost Calc: '{llm_model_name_str}'")
-                                    print(f"UI DEBUG: Input Tokens for Cost Calc: {input_tokens}")
-                                    print(f"UI DEBUG: Output Tokens for Cost Calc: {output_tokens}")
-
-                                    cost = TokenCostManager.calculate_cost(llm_model_name_str, input_tokens, output_tokens)
-                                                                        
-                                    # DEBUG PRINT for cost
-                                    print(f"UI DEBUG: Calculated Cost: {cost}")
-
-                                    st.metric(label="LLM Cost", value=f"${cost:.4f}" if cost is not None and isinstance(cost, (float, int)) else "N/A")
+                                    cost = None
+                                    # Try to get cost from evaluation_results first (which should include metrics)
+                                    if evaluation_results and isinstance(evaluation_results, dict) and "llm_cost" in evaluation_results:
+                                        cost = evaluation_results.get('llm_cost')
+                                    # Fallback to metrics if not in evaluation_results (e.g., if evaluation step was skipped)
+                                    elif metrics and "llm_cost" in metrics:
+                                        cost = metrics.get('llm_cost')
+                                    
+                                    cost_display_value = "N/A"
+                                    if cost is not None and isinstance(cost, (float, int)):
+                                        cost_display_value = f"${cost:.4f}"
+                                    elif cost is None and metrics: # If cost is explicitly None but metrics were processed
+                                        cost_display_value = "$0.0000" # Or indicate it was processed but no cost applicable
+                                    
+                                    st.metric(label="LLM Cost", value=cost_display_value)
 
                             with st.expander("Response", expanded=True): st.write(response)
                             with st.expander("Retrieved Contexts", expanded=False):
@@ -333,12 +332,12 @@ def display_evaluation_interface():
                                      # Filter out 'llm_cost' if it accidentally appears in RAGAS results
                                      metrics_list = [(name, val) for name, val in metrics_list if name != 'llm_cost']
                                      num_metrics = len(metrics_list)
-                                     metrics_per_row = 3 # Max 3 metrics per row
+                                     metrics_per_row = 2 # Max 2 metrics per row
 
                                      for i_loop_var in range(0, num_metrics, metrics_per_row):
                                          current_row_metrics_data = metrics_list[i_loop_var : i_loop_var + metrics_per_row]
                                          # Create columns for the current row of metrics
-                                         score_display_cols = st.columns(len(current_row_metrics_data))
+                                         score_display_cols = st.columns(len(current_row_metrics_data)) # Will be 1 or 2 columns
                                          for k_loop_var, (metric_name, metric_value) in enumerate(current_row_metrics_data):
                                              with score_display_cols[k_loop_var]:
                                                   score_val_display = f"{metric_value:.2f}" if isinstance(metric_value, (int, float)) else "N/A"
@@ -441,17 +440,19 @@ def display_evaluation_interface():
                         eval_scores = selected_result.get('evaluation_scores', {})
                         if isinstance(eval_scores, dict) and "error" not in eval_scores and eval_scores:
                             st.subheader("Evaluation Scores")
-                            metric_cols_detail = st.columns(len(eval_scores))
-                            i = 0; valid_scores_detail = []
-                            for metric, score in eval_scores.items():
-                                 with metric_cols_detail[i]:
-                                     if metric == "llm_cost": # Check if the metric is "llm_cost"
-                                         score_display = f"${score:.4f}" if isinstance(score, (int, float)) else "N/A"
-                                     else:
-                                         score_display = f"{score:.2f}" if isinstance(score, (int, float)) else "N/A"
-                                     st.metric(label=metric.replace('_', ' ').title(), value=score_display)
-                                     if isinstance(score, (int, float)): valid_scores_detail.append(score)
-                                 i+=1
+                            scores_items = list(eval_scores.items())
+                            metrics_per_row_detail = 2 # Max 2 metrics per row for detailed view
+
+                            for i_detail_loop in range(0, len(scores_items), metrics_per_row_detail):
+                                row_items = scores_items[i_detail_loop : i_detail_loop + metrics_per_row_detail]
+                                cols_detail = st.columns(len(row_items)) # Will be 1 or 2 columns
+                                for idx_detail, (metric, score) in enumerate(row_items):
+                                    with cols_detail[idx_detail]:
+                                        if metric == "llm_cost": # Check if the metric is "llm_cost"
+                                            score_display = f"${score:.4f}" if isinstance(score, (int, float)) else "N/A"
+                                        else:
+                                            score_display = f"{score:.2f}" if isinstance(score, (int, float)) else "N/A"
+                                        st.metric(label=metric.replace('_', ' ').title(), value=score_display)
                         elif isinstance(eval_scores, dict) and "error" in eval_scores: st.warning(f"Eval failed: {eval_scores['error']}")
                         elif ground_truth: st.warning("Scores not available (failed/skipped?).")
                         else: st.info("Provide ground truth during permutation run for scores.")

@@ -10,7 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from rank_bm25 import BM25Okapi
 import numpy as np  
-from token_utils import TokenCounter
+from token_utils import TokenCounter, TokenCostManager
 import logging
 import time
 
@@ -594,13 +594,15 @@ class RAGPipeline:
                 total_tokens = prompt_tokens + completion_tokens
             except Exception as e:
                 logging.error(f"TokenCounter fallback failed in RAGPipeline.run: {e}")
+        model_name = self.llm.get_model_name()
+        calculated_cost = TokenCostManager.calculate_cost(model_name, prompt_tokens, completion_tokens)
         
         self.last_metrics = {
             "total_time": total_time,
             "input_tokens": prompt_tokens,
             "output_tokens": completion_tokens,
             "total_tokens": total_tokens,
-            "llm_cost": 0.0
+            "llm_cost": calculated_cost if calculated_cost is not None else 0.0
         }
         
         return response_text, retrieved_texts, self.last_metrics
@@ -660,13 +662,16 @@ class RAGPipeline:
                 completion_tokens = token_counter.count_tokens(response_text)
                 total_tokens = prompt_tokens + completion_tokens
             
+            model_name = self.llm.get_model_name()
+            calculated_cost = TokenCostManager.calculate_cost(model_name, prompt_tokens, completion_tokens)
+            
             # Store metrics
             self.last_metrics = {
                 "total_time": total_time,
                 "input_tokens": prompt_tokens,
                 "output_tokens": completion_tokens,
                 "total_tokens": total_tokens,
-                "llm_cost": 0.0
+                "llm_cost": calculated_cost if calculated_cost is not None else 0.0
             }
             
             return response_text, contexts, self.last_metrics
