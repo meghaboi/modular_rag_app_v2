@@ -156,17 +156,22 @@ def run_pipeline_with_config(
             }
 
         # Run query and get non-streaming response
-        response = pipeline.run(user_query)
+        response_text, contexts, metrics_from_run = pipeline.run(user_query)
         
         # Get evaluation metrics if ground truth is provided
-        metrics = {}
+        evaluation_metrics = {}
         if ground_truth:
-            metrics = pipeline.evaluate_response(response, ground_truth)
+            # evaluate_response in RAGPipeline expects: query, response, contexts, ground_truth
+            # It uses self.llm and self.last_metrics internally.
+            evaluation_metrics = pipeline.evaluate_response(query=user_query, response=response_text, contexts=contexts, ground_truth=ground_truth)
+        else:
+            evaluation_metrics = metrics_from_run # If no ground truth, use metrics from the run itself
 
         return {
             "status": "success",
-            "response": response,
-            "metrics": metrics,
+            "response": response_text,
+            "metrics": evaluation_metrics, # This now contains RAGAS scores + performance metrics
+            "contexts": contexts, # Adding contexts to the output
             "config": {
                 "embedding": embedding_model_enum.value,
                 "vector_store": vector_store_enum.value,

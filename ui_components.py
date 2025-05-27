@@ -12,6 +12,7 @@ from enums import (
     ChunkingStrategyType
 )
 from pipeline_utils import run_all_permutations
+from token_utils import TokenCostManager
 from datetime import datetime
 
 def display_chat_interface():
@@ -288,14 +289,36 @@ def display_evaluation_interface():
                             st.markdown(f"**Configuration:** `{st.session_state.embedding_model} | {st.session_state.vector_store} | {st.session_state.reranker} | {st.session_state.llm_model} | {st.session_state.chunking_strategy}`")
                             
                             # Layout for Time and Tokens using st.metric
-                            summary_metric_cols = st.columns(3)
+                            summary_metric_cols = st.columns(4)
                             with summary_metric_cols[0]:
                                 st.metric(label="Processing Time", value=f"{eval_elapsed_time:.2f}s")
                             if metrics:
+                                input_tokens = metrics.get('input_tokens', 0)
+                                output_tokens = metrics.get('output_tokens', 0)
+                                
                                 with summary_metric_cols[1]:
-                                    st.metric(label="Input Tokens", value=metrics.get('input_tokens', "N/A"))
+                                    st.metric(label="Input Tokens", value=input_tokens)
                                 with summary_metric_cols[2]:
-                                    st.metric(label="Output Tokens", value=metrics.get('output_tokens', "N/A"))
+                                    st.metric(label="Output Tokens", value=output_tokens)
+                                
+                                # Calculate and display LLM Cost
+                                with summary_metric_cols[3]:
+                                    llm_model_name_str = st.session_state.llm_model # Get current LLM model string
+                                    # Ensure llm_model_name_str is valid for TokenCostManager
+                                    # This might involve mapping from the display name to the one TokenCostManager expects if they differ
+                                    # For now, assume it's directly usable or TokenCostManager handles variations.
+                                                                        
+                                    # DEBUG PRINTS
+                                    print(f"UI DEBUG: LLM Model Name for Cost Calc: '{llm_model_name_str}'")
+                                    print(f"UI DEBUG: Input Tokens for Cost Calc: {input_tokens}")
+                                    print(f"UI DEBUG: Output Tokens for Cost Calc: {output_tokens}")
+
+                                    cost = TokenCostManager.calculate_cost(llm_model_name_str, input_tokens, output_tokens)
+                                                                        
+                                    # DEBUG PRINT for cost
+                                    print(f"UI DEBUG: Calculated Cost: {cost}")
+
+                                    st.metric(label="LLM Cost", value=f"${cost:.4f}" if cost is not None and isinstance(cost, (float, int)) else "N/A")
 
                             with st.expander("Response", expanded=True): st.write(response)
                             with st.expander("Retrieved Contexts", expanded=False):
@@ -307,6 +330,8 @@ def display_evaluation_interface():
                                  st.subheader("Evaluation Scores")
                                  if evaluation_results:
                                      metrics_list = list(evaluation_results.items())
+                                     # Filter out 'llm_cost' if it accidentally appears in RAGAS results
+                                     metrics_list = [(name, val) for name, val in metrics_list if name != 'llm_cost']
                                      num_metrics = len(metrics_list)
                                      metrics_per_row = 3 # Max 3 metrics per row
 
@@ -316,8 +341,8 @@ def display_evaluation_interface():
                                          score_display_cols = st.columns(len(current_row_metrics_data))
                                          for k_loop_var, (metric_name, metric_value) in enumerate(current_row_metrics_data):
                                              with score_display_cols[k_loop_var]:
-                                                 score_val_display = f"{metric_value:.2f}" if isinstance(metric_value, (int, float)) else "N/A"
-                                                 st.metric(label=metric_name.replace('_', ' ').title(), value=score_val_display)
+                                                  score_val_display = f"{metric_value:.2f}" if isinstance(metric_value, (int, float)) else "N/A"
+                                                  st.metric(label=metric_name.replace('_', ' ').title(), value=score_val_display)
                                  else: st.info("No scores generated.")
                             elif "error" in evaluation_results: st.warning(f"Scores not calculated: {evaluation_results['error']}")
                             elif ground_truth: st.warning("Scores could not be calculated.")
@@ -420,7 +445,10 @@ def display_evaluation_interface():
                             i = 0; valid_scores_detail = []
                             for metric, score in eval_scores.items():
                                  with metric_cols_detail[i]:
-                                     score_display = f"{score:.2f}" if isinstance(score, (int, float)) else "N/A"
+                                     if metric == "llm_cost": # Check if the metric is "llm_cost"
+                                         score_display = f"${score:.4f}" if isinstance(score, (int, float)) else "N/A"
+                                     else:
+                                         score_display = f"{score:.2f}" if isinstance(score, (int, float)) else "N/A"
                                      st.metric(label=metric.replace('_', ' ').title(), value=score_display)
                                      if isinstance(score, (int, float)): valid_scores_detail.append(score)
                                  i+=1

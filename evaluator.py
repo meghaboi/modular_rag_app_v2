@@ -19,7 +19,7 @@ class BaseEvaluator(ABC):
     
     @abstractmethod
     def evaluate(self, query: str, response: str, contexts: List[str], 
-                 ground_truth: Optional[str] = None) -> Dict[str, float]:
+                 ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """Evaluate RAG system performance using selected metrics"""
         pass
     
@@ -56,7 +56,7 @@ class BuiltinEvaluator(BaseEvaluator):
         self._evaluator_model = ChatOpenAI(model_name="gpt-4")
     
     def evaluate(self, query: str, response: str, contexts: List[str], 
-                 ground_truth: Optional[str] = None) -> Dict[str, float]:
+                 ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """Evaluate RAG system performance using selected metrics"""
         results = {}
         
@@ -70,6 +70,9 @@ class BuiltinEvaluator(BaseEvaluator):
                 results[metric] = self._evaluate_groundedness(response, contexts)
             elif metric == "faithfulness":
                 results[metric] = self._evaluate_faithfulness(response, contexts)
+        
+        if cost is not None:
+            results[EvaluationMetricType.COST.value] = cost
         
         return results
     
@@ -308,7 +311,7 @@ class RAGASEvaluator(BaseEvaluator):
         ragas.llm = self._llm
     
     def evaluate(self, query: str, response: str, contexts: List[str], 
-                ground_truth: Optional[str] = None) -> Dict[str, float]:
+                ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """
         Evaluate using RAGAS metrics
         
@@ -366,49 +369,45 @@ class RAGASEvaluator(BaseEvaluator):
             if hasattr(results, 'scores') and results.scores:
                 logging.info(f"Found scores attribute: {results.scores}")
                 
-                # Handle both list and dictionary formats for scores
-                scores_data = results.scores
-                if isinstance(scores_data, list) and len(scores_data) > 0:
-                    first_score = scores_data[0]
-                    if isinstance(first_score, dict):
-                        for metric in self._metrics:
-                            if metric in first_score:
-                                raw_value = float(first_score[metric])
-                                # FIXED SCALING: Properly map from 0-1 to 1-5 scale
-                                scaled_value = 1.0 + raw_value * 4.0
-                                metrics_dict[metric] = round(scaled_value, 2)
-                                logging.info(f"Found metric {metric} in scores[0], value: {raw_value}")
-                            else:
-                                # Try alternate names
-                                found = False
-                                for alt_name in self.metric_name_map.get(metric, []):
-                                    if alt_name in first_score:
-                                        raw_value = float(first_score[alt_name])
-                                        # FIXED SCALING: Properly map from 0-1 to 1-5 scale
-                                        scaled_value = 1.0 + raw_value * 4.0
-                                        metrics_dict[metric] = round(scaled_value, 2)
-                                        logging.info(f"Found metric {metric} as {alt_name}, value: {raw_value}")
-                                        found = True
-                                        break
-                                
-                                if not found:
-                                    logging.warning(f"Metric {metric} not found in scores dictionary")
-                                    metrics_dict[metric] = 3.0
-                elif isinstance(scores_data, dict):
+                # Handle different result structures
+                if isinstance(results.scores, list) and len(results.scores) > 0:
+                    scores_data = results.scores[0] if isinstance(results.scores[0], dict) else {}
                     for metric in self._metrics:
                         if metric in scores_data:
                             raw_value = float(scores_data[metric])
-                            # FIXED SCALING: Properly map from 0-1 to 1-5 scale
+                            # Scale 0-1 to 1-5
                             scaled_value = 1.0 + raw_value * 4.0
                             metrics_dict[metric] = round(scaled_value, 2)
-                            logging.info(f"Found metric {metric} in scores dict, value: {raw_value}")
                         else:
                             # Try alternate names
                             found = False
                             for alt_name in self.metric_name_map.get(metric, []):
                                 if alt_name in scores_data:
                                     raw_value = float(scores_data[alt_name])
-                                    # FIXED SCALING: Properly map from 0-1 to 1-5 scale
+                                    # Scale 0-1 to 1-5
+                                    scaled_value = 1.0 + raw_value * 4.0
+                                    metrics_dict[metric] = round(scaled_value, 2)
+                                    logging.info(f"Found metric {metric} as {alt_name}, value: {raw_value}")
+                                    found = True
+                                    break
+                            
+                            if not found:
+                                logging.warning(f"Metric {metric} not found in scores dictionary")
+                                metrics_dict[metric] = 3.0
+                elif isinstance(results.scores, dict):
+                    for metric in self._metrics:
+                        if metric in results.scores:
+                            raw_value = float(results.scores[metric])
+                            # Scale 0-1 to 1-5
+                            scaled_value = 1.0 + raw_value * 4.0
+                            metrics_dict[metric] = round(scaled_value, 2)
+                        else:
+                            # Try alternate names
+                            found = False
+                            for alt_name in self.metric_name_map.get(metric, []):
+                                if alt_name in results.scores:
+                                    raw_value = float(results.scores[alt_name])
+                                    # Scale 0-1 to 1-5
                                     scaled_value = 1.0 + raw_value * 4.0
                                     metrics_dict[metric] = round(scaled_value, 2)
                                     logging.info(f"Found metric {metric} as {alt_name}, value: {raw_value}")
@@ -437,6 +436,9 @@ class RAGASEvaluator(BaseEvaluator):
                     metrics_dict["f1_score"] = round(f1_score_scaled, 2)
                 else:
                     metrics_dict["f1_score"] = 3.0  # Default middle value if components missing
+            
+            if cost is not None:
+                metrics_dict[EvaluationMetricType.COST.value] = cost
             
             return metrics_dict
             
@@ -490,7 +492,7 @@ class LangSmithEvaluator(BaseEvaluator):
         ]
     
     def evaluate(self, query: str, response: str, contexts: List[str], 
-                 ground_truth: Optional[str] = None) -> Dict[str, float]:
+                 ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """Evaluate RAG system performance using LangSmith-inspired prompts"""
         results = {}
         
@@ -504,6 +506,9 @@ class LangSmithEvaluator(BaseEvaluator):
                 results[metric] = self._evaluate_groundedness(response, contexts)
             elif metric == "faithfulness":
                 results[metric] = self._evaluate_faithfulness(response, contexts)
+        
+        if cost is not None:
+            results[EvaluationMetricType.COST.value] = cost
         
         return results
     
@@ -736,7 +741,7 @@ class DeepEvaluator(BaseEvaluator):
         }
     
     def evaluate(self, query: str, response: str, contexts: List[str], 
-                 ground_truth: Optional[str] = None) -> Dict[str, float]:
+                 ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """Evaluate RAG system performance using selected metrics with specialized models"""
         results = {}
         
@@ -759,6 +764,9 @@ class DeepEvaluator(BaseEvaluator):
                 # Log error and use default middle score instead of 0
                 print(f"Error evaluating {metric}: {str(e)}")
                 results[metric] = 3.0  # Default to middle score instead of 0
+        
+        if cost is not None:
+            results[EvaluationMetricType.COST.value] = cost
         
         return results
     
@@ -1099,7 +1107,7 @@ class RAGASEvaluatorV2(BaseEvaluator):
         ragas.llm = self._llm
     
     def evaluate(self, query: str, response: str, contexts: List[str], 
-                ground_truth: Optional[str] = None) -> Dict[str, float]:
+                ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """
         Evaluate using RAGAS metrics
         
@@ -1201,6 +1209,9 @@ class RAGASEvaluatorV2(BaseEvaluator):
             
             # Log final metrics
             logging.info(f"Final scaled metrics: {metrics_dict}")
+            
+            if cost is not None:
+                metrics_dict[EvaluationMetricType.COST.value] = cost
             
             return metrics_dict
             
@@ -1314,7 +1325,7 @@ class CustomEvaluator(BaseEvaluator):
             return 0.0
 
     def evaluate(self, query: str, response: str, contexts: List[str],
-                 ground_truth: Optional[str] = None) -> Dict[str, float]:
+                 ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """Evaluate RAG system performance using selected metrics"""
         results = {}
 
@@ -1336,6 +1347,9 @@ class CustomEvaluator(BaseEvaluator):
                     raise ValueError("Ground truth is required for Answer Correctness.")
                 results[metric] = self._evaluate_answer_correctness(response, ground_truth)
             # No F1 score or overall score as per requirements
+
+        if cost is not None:
+            results[EvaluationMetricType.COST.value] = cost
 
         return results
 

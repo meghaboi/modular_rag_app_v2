@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Tuple, Optional
 import os
+import logging
 from enums import RerankerModelType
 import requests
-from llm_models import StreamingLLM # Corrected import
-from llm_models import ClaudeLLM # Corrected import for Claude model
-import json # Add json import
+from llm_models import StreamingLLM 
+from llm_models import ClaudeLLM 
+import json 
 
 class Reranker(ABC):
     """Abstract base class for rerankers following Interface Segregation Principle"""
@@ -38,24 +39,32 @@ class VoyageReranker(Reranker):
             return []
 
         try:
-            # Get reranking scores from Voyage API
-            scores = self._client.rerank(
+            # Get reranking results from Voyage API
+            reranking_output = self._client.rerank(
                 query=query,
                 documents=documents,
                 model=self._model_name
             )
             
-            # Create sorted list of (document, score) tuples
-            scored_docs = list(zip(documents, scores))
-            
-            # Sort by score in descending order
-            reranked_docs = sorted(scored_docs, key=lambda x: x[1], reverse=True)
+            # Extract document and score from each RerankingResult object
+            # The results are already sorted by relevance score in descending order by the API.
+            reranked_docs = []
+            if reranking_output and hasattr(reranking_output, 'results'):
+                for result_item in reranking_output.results:
+                    # result_item.document is the document string
+                    # result_item.relevance_score is the score
+                    reranked_docs.append((result_item.document, result_item.relevance_score))
+            else:
+                logging.warning("Voyage reranker did not return expected 'results' attribute. Falling back to original documents.")
+                # Fallback to original documents with a neutral score if API response is not as expected
+                return [(doc, 0.0) for doc in documents] # Changed score to 0.0 for neutral fallback
             
             return reranked_docs
 
         except Exception as e:
-            print(f"Error in reranking with Voyage: {str(e)}")
-            return [(doc, 1.0) for doc in documents]  # Return original documents as fallback
+            logging.error(f"Error in reranking with Voyage: {str(e)}", exc_info=True) # Add exc_info for more details
+            # Return original documents with a neutral score as fallback in case of any exception
+            return [(doc, 0.0) for doc in documents] # Changed score to 0.0 for neutral fallback
 
 class CohereRerankerV2(Reranker):
     """Cohere V2 Reranker implementation"""

@@ -154,6 +154,7 @@ class EvaluationMetricType(Enum):
     CONTEXT_COVERAGE = "context_coverage"    # Custom metric
     ANSWER_CORRECTNESS = "answer_correctness"
     F1_SCORE = "f1_score"                   # Harmonic mean of context recall and relevance
+    COST = "cost"                           # LLM cost metric
     
     @classmethod
     def list(cls):

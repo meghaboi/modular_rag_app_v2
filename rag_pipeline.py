@@ -514,6 +514,7 @@ class RAGPipeline:
         self.evaluation_mode = evaluation_mode
         self.last_evaluation_scores = None  # Store the last evaluation scores
         self.last_metrics = {}  # Store the last performance metrics
+        self.last_llm_usage = None # Store usage from the last LLM call
     
     def initialize(self, file_path: str) -> None:
         """Initialize the pipeline with a document file"""
@@ -559,18 +560,50 @@ class RAGPipeline:
         
         return retrieved_texts
     
-    def run(self, query: str) -> str:
-        """Process a query and return the response (non-streaming)"""
+    def run(self, query: str) -> Tuple[str, List[str], Dict[str, Any]]:
+        """Process a query and return the response, contexts, and metrics (non-streaming)"""
+        start_time = time.time()
+        
         # Get context
         retrieved_texts = self.retrieve_context(query)
         
         # Combine retrieved documents
-        context = "\n\n".join(retrieved_texts)
+        context_str = "\n\n".join(retrieved_texts)
         
         # Generate response
-        response = self.llm.generate(query, context, evaluation_mode=self.evaluation_mode)
+        response_text, usage_info = self.llm.generate(query, context_str, evaluation_mode=self.evaluation_mode)
+        self.last_llm_usage = usage_info
         
-        return response
+        total_time = time.time() - start_time
+        
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+        
+        if usage_info:
+            prompt_tokens = usage_info.get('prompt_tokens', 0)
+            completion_tokens = usage_info.get('completion_tokens', 0)
+            total_tokens = usage_info.get('total_tokens', 0)
+        else: # Fallback if usage_info is None, though unlikely with new changes
+            logging.warning("LLM usage_info was None in RAGPipeline.run. Token counts may be estimated.")
+            # Fallback to TokenCounter if usage_info is not available
+            try:
+                token_counter = TokenCounter(model_name=self.llm.get_model_name())
+                prompt_tokens = token_counter.count_tokens(query + context_str)
+                completion_tokens = token_counter.count_tokens(response_text)
+                total_tokens = prompt_tokens + completion_tokens
+            except Exception as e:
+                logging.error(f"TokenCounter fallback failed in RAGPipeline.run: {e}")
+        
+        self.last_metrics = {
+            "total_time": total_time,
+            "input_tokens": prompt_tokens,
+            "output_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "llm_cost": 0.0
+        }
+        
+        return response_text, retrieved_texts, self.last_metrics
     
     def stream_run(self, query: str):
         """Process a query and stream the response
@@ -579,7 +612,8 @@ class RAGPipeline:
         """
         # If we're in evaluation mode, use the non-streaming method instead
         if self.evaluation_mode:
-            yield self.run(query)
+            response_text, _, _ = self.run(query) # Discard contexts and metrics for streaming yield
+            yield response_text
             return
             
         # Get context
@@ -605,24 +639,37 @@ class RAGPipeline:
             contexts = self.retrieve_context(query)
             
             # Generate response
-            response = self.llm.generate(query, context="\n".join(contexts), evaluation_mode=self.evaluation_mode)
+            response_text, usage_info = self.llm.generate(query, context="\n".join(contexts), evaluation_mode=self.evaluation_mode)
+            self.last_llm_usage = usage_info
             
             # Calculate total time
             total_time = time.time() - start_time
             
-            # Count tokens
-            token_counter = TokenCounter(model_name=self.llm.get_model_name())
-            input_tokens = token_counter.count_tokens(query + "\n".join(contexts))
-            output_tokens = token_counter.count_tokens(response)
+            prompt_tokens = 0
+            completion_tokens = 0
+            total_tokens = 0
+            
+            if usage_info:
+                prompt_tokens = usage_info.get('prompt_tokens', 0)
+                completion_tokens = usage_info.get('completion_tokens', 0)
+                total_tokens = usage_info.get('total_tokens', 0)
+            else: # Fallback if usage_info is None, though unlikely with new changes
+                logging.warning("LLM usage_info was None in process_query. Token counts will be zero.")
+                token_counter = TokenCounter(model_name=self.llm.get_model_name())
+                prompt_tokens = token_counter.count_tokens(query + "\n".join(contexts))
+                completion_tokens = token_counter.count_tokens(response_text)
+                total_tokens = prompt_tokens + completion_tokens
             
             # Store metrics
             self.last_metrics = {
                 "total_time": total_time,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens
+                "input_tokens": prompt_tokens,
+                "output_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "llm_cost": 0.0
             }
             
-            return response, contexts, self.last_metrics
+            return response_text, contexts, self.last_metrics
             
         except Exception as e:
             logging.error(f"Error processing query: {e}")
@@ -640,11 +687,14 @@ class RAGPipeline:
                 EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.RAGAS_V2)
             )
             
+            cost_to_pass = self.last_metrics.get("llm_cost")
+            
             scores = evaluator.evaluate(
                 query=query,
                 response=response,
                 contexts=contexts,
-                ground_truth=ground_truth
+                ground_truth=ground_truth,
+                cost=cost_to_pass
             )
             
             # Add performance metrics to scores
