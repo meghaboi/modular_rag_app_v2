@@ -19,7 +19,7 @@ from enums import (
     ChunkingStrategyType
 )
 
-def get_subject_configuration(subject: str) -> Dict[str, Any]:
+def get_subject_configuration(subject: str, query: str) -> Dict[str, Any]:
     """
     Get the optimal RAG configuration for a specific subject using OpenAI's function calling API.
     Falls back to predefined configurations if API call fails.
@@ -66,8 +66,8 @@ def get_subject_configuration(subject: str) -> Dict[str, Any]:
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": f"Determine the optimal RAG configuration for {subject} textbooks."},
-                {"role": "user", "content": f"What is the optimal RAG configuration for processing {subject} textbooks?"}
+                {"role": "system", "content": f"Determine the optimal RAG configuration for {subject} textbooks, considering the user query: {query}."},
+                {"role": "user", "content": f"What is the optimal RAG configuration for processing {subject} textbooks, specifically for a query like: '{query}'?"}
             ],
             functions=functions,
             function_call={"name": "get_subject_config"}
@@ -80,14 +80,14 @@ def get_subject_configuration(subject: str) -> Dict[str, Any]:
     except Exception as e:
         print(f"Error getting configuration from OpenAI: {e}")
         # Fall back to predefined configuration
-        config = get_subject_config(subject)
+        config_obj = get_subject_config(subject) # Renamed to avoid confusion
         return {
-            "chunk_size": config.chunk_size,
-            "chunk_overlap": config.chunk_overlap,
-            "similarity_threshold": config.similarity_threshold,
-            "max_tokens": config.max_tokens,
-            "temperature": config.temperature,
-            "system_prompt": config.system_prompt
+            "chunk_size": config_obj.chunk_size,
+            "chunk_overlap": config_obj.chunk_overlap,
+            "similarity_threshold": 0.7, # Default
+            "max_tokens": 1000,          # Default
+            "temperature": 0.7,          # Default
+            "system_prompt": "You are a helpful assistant." # Default
         }
 
 def update_rag_configuration(subject: str, pipeline) -> Optional[bool]:

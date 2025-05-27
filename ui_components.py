@@ -4,6 +4,8 @@ import time
 import itertools
 from typing import List, Dict, Any
 from utils import text_to_speech, is_greeting, check_api_keys, get_csv_download_link
+from subject_handler import get_subject_configuration
+from pipeline_utils import initialize_pipeline
 from enums import (
     EmbeddingModelType,
     RerankerModelType,
@@ -99,6 +101,74 @@ def display_chat_interface():
                 "contexts": [], "elapsed_time": None
             })
             st.stop()
+
+        # Dynamic Configuration Logic
+        config_changed = False
+        if 'current_subject' in st.session_state and st.session_state.current_subject:
+            subject = st.session_state.current_subject
+            logging.info(f"Current subject '{subject}' and user query '{user_query}' found, attempting dynamic configuration.")
+            try:
+                new_config = get_subject_configuration(subject, user_query)
+                if new_config:
+                    logging.info(f"Received dynamic config: {new_config}")
+                    
+                    # Process chunk_size
+                    if 'chunk_size' in new_config and new_config['chunk_size'] != st.session_state.get('chunk_size'):
+                        st.session_state.chunk_size = new_config['chunk_size']
+                        config_changed = True
+                        logging.info(f"Updated chunk_size to {st.session_state.chunk_size}")
+                    
+                    # Process chunk_overlap
+                    if 'chunk_overlap' in new_config and new_config['chunk_overlap'] != st.session_state.get('chunk_overlap'):
+                        st.session_state.chunk_overlap = new_config['chunk_overlap']
+                        config_changed = True
+                        logging.info(f"Updated chunk_overlap to {st.session_state.chunk_overlap}")
+
+                    # Log other params (not applying them yet)
+                    other_params = {k: v for k, v in new_config.items() if k not in ['chunk_size', 'chunk_overlap']}
+                    if other_params:
+                        logging.info(f"Other dynamic config params received (not applied): {other_params}")
+
+                    if config_changed:
+                        logging.info("Configuration changed, re-initializing pipeline.")
+                        try:
+                            embedding_enum = EmbeddingModelType.from_string(st.session_state.embedding_model)
+                            vs_enum = VectorStoreType.from_string(st.session_state.vector_store)
+                            reranker_enum = RerankerModelType.from_string(st.session_state.reranker)
+                            llm_enum = LLMModelType.from_string(st.session_state.llm_model)
+                            cs_enum = ChunkingStrategyType.from_string(st.session_state.chunking_strategy)
+
+                            pipeline_instance = initialize_pipeline(
+                                file_path=st.session_state.file_path,
+                                embedding_model_enum=embedding_enum,
+                                vector_store_enum=vs_enum,
+                                reranker_enum=reranker_enum,
+                                llm_enum=llm_enum,
+                                chunking_strategy_enum=cs_enum,
+                                hybrid_alpha=st.session_state.hybrid_alpha,
+                                chunk_size=st.session_state.chunk_size, # Use updated value
+                                chunk_overlap=st.session_state.chunk_overlap, # Use updated value
+                                top_k=st.session_state.top_k
+                            )
+                            if pipeline_instance:
+                                st.session_state.pipeline = pipeline_instance
+                                logging.info("Pipeline re-initialized successfully with new dynamic configuration.")
+                                st.toast("✨ Smartly adjusted settings for your query!")
+                            else:
+                                logging.error("Failed to re-initialize pipeline with dynamic config, initialize_pipeline returned None.")
+                                st.warning("⚠️ Couldn't apply smart adjustments. Using previous settings.")
+                        except Exception as e_reinit:
+                            logging.error(f"Error re-initializing pipeline with dynamic config: {e_reinit}", exc_info=True)
+                            st.warning(f"⚠️ Error applying smart adjustments: {e_reinit}. Using previous settings.")
+                    else:
+                        logging.info("Dynamic configuration received, but no changes to chunk_size or chunk_overlap. No re-initialization needed.")
+                else:
+                    logging.info("get_subject_configuration returned None. No dynamic changes applied.")
+            except Exception as e_dyn_config:
+                logging.error(f"Error during dynamic configuration call: {e_dyn_config}", exc_info=True)
+                st.warning(f"⚠️ Could not fetch dynamic settings for your query ({e_dyn_config}). Using current settings.")
+        else:
+            logging.info("Dynamic configuration skipped: 'current_subject' not in session state or is None.")
 
         # Check if it's a greeting
         is_greet, greeting_response = is_greeting(user_query)
