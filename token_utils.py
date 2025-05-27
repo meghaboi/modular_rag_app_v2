@@ -4,7 +4,7 @@ import tiktoken
 class TokenCounter:
     """Utility class for counting tokens in text"""
     
-    def __init__(self, model_name: str = "gpt-3.5-turbo"):
+    def __init__(self, model_name: str = "gpt-3.5"):
         """Initialize token counter with specified model"""
         try:
             # Try OpenAI's tokenizer first
@@ -50,17 +50,17 @@ class TokenCostManager:
         # OpenAI - Prices per 1M tokens, converted to per 1K tokens
         "gpt-4": {"input": 0.03, "output": 0.06},  # $30/1M input, $60/1M output
         "gpt-4-32k": {"input": 0.06, "output": 0.12}, # $60/1M input, $120/1M output
-        "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015}, # $0.50/1M input, $1.50/1M output (e.g. gpt-3.5-turbo-0125)
-        "gpt-3.5-turbo-16k": {"input": 0.003, "output": 0.004}, # Older model, may be covered by gpt-3.5-turbo with startswith
+        "gpt-3.5": {"input": 0.0005, "output": 0.0015}, # $0.50/1M input, $1.50/1M output (e.g. gpt-3.5-turbo-0125)
+        "gpt-3.5-16k": {"input": 0.003, "output": 0.004}, # Older model, may be covered by gpt-3.5-turbo with startswith
         
         # Anthropic - Prices per 1M tokens, converted to per 1K tokens
         "claude-instant-1.2": {"input": 0.0008, "output": 0.0024}, 
         "claude-2": {"input": 0.008, "output": 0.024}, 
         "claude-2.1": {"input": 0.008, "output": 0.024}, 
-        "claude-3-opus-20240229": {"input": 0.015, "output": 0.075}, 
-        "claude-3-sonnet-20240229": {"input": 0.003, "output": 0.015},
-        "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
-        "claude-3-7-sonnet-20250219": {"input": 0.003, "output": 0.015}, # Specific version used by factory
+        "claude-3-opus": {"input": 0.015, "output": 0.075}, 
+        "claude-3-sonnet": {"input": 0.003, "output": 0.015},
+        "claude-3-haiku": {"input": 0.00025, "output": 0.00125},
+        "claude-3-7-sonnet": {"input": 0.003, "output": 0.015}, # Specific version used by factory
         
         # Google
         # Gemini 1.5 Flash: $0.35/1M input, $0.70/1M output (for <128K context) -> 0.00035 / 0.00070 per 1K
