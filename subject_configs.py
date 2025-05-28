@@ -76,6 +76,36 @@ SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
         chunk_overlap=100,
         top_k=5,
         hybrid_alpha=0.4  # Lower vector weight for more keyword matching
+    ),
+    "question_answering": SubjectConfig(
+        chunk_size=256,
+        chunk_overlap=50,
+        top_k=5,
+        hybrid_alpha=0.75
+    ),
+    "summarization": SubjectConfig(
+        chunk_size=768,
+        chunk_overlap=150,
+        top_k=3,
+        hybrid_alpha=0.4
+    ),
+    "comparison": SubjectConfig(
+        chunk_size=512,
+        chunk_overlap=100,
+        top_k=4,
+        hybrid_alpha=0.6
+    ),
+    "code_generation": SubjectConfig(
+        chunk_size=384,
+        chunk_overlap=75,
+        top_k=4,
+        hybrid_alpha=0.7
+    ),
+    "general_discussion": SubjectConfig(
+        chunk_size=DEFAULT_CHUNK_SIZE,
+        chunk_overlap=DEFAULT_CHUNK_OVERLAP,
+        top_k=DEFAULT_TOP_K,
+        hybrid_alpha=DEFAULT_HYBRID_ALPHA
     )
 }
 
