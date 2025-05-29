@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 import os
 import re # Added for parsing LLM responses
 import json # Added for parsing LLM responses that might be JSON
-
+from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate # Added for creating prompts
 from langchain_google_genai import ChatGoogleGenerativeAI # Added for Gemini model
 
@@ -1150,9 +1150,14 @@ class RAGASEvaluatorV2(BaseEvaluator):
             # Get metrics to evaluate
             active_metrics = [self._ragas_metrics[metric] for metric in self._metrics 
                             if metric in self._ragas_metrics]
-            
+
+            chatLLM = ChatOpenAI(
+            model="gpt-4o",
+            temperature=0.0,
+            )
+
             # Run evaluation
-            results = ragas_evaluate(ds, metrics=active_metrics, llm=self._llm)
+            results = ragas_evaluate(ds, metrics=active_metrics, llm=chatLLM)
             
             # Log results for debugging
             logging.info(f"RAGAS results: {results}")

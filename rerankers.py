@@ -347,7 +347,7 @@ class RerankerFactory:
         elif reranker_name == RerankerModelType.COHERE_MULTILINGUAL:
             return CohereRerankerMultilingual()
         elif reranker_name == RerankerModelType.VOYAGE:
-            return VoyageReranker()
+            return VoyageReranker(model_name="rerank-lite-1")
         elif reranker_name == RerankerModelType.VOYAGE_2:
             return VoyageReranker(model_name="rerank-2")
         elif reranker_name == RerankerModelType.JINA:
