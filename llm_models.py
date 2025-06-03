@@ -16,12 +16,12 @@ class StreamingLLM(ABC):
         self._last_call_usage: Optional[Dict[str, int]] = None
     
     @abstractmethod
-    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Tuple[str, Optional[Dict[str, int]]]:
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Tuple[str, Optional[Dict[str, int]]]:
         """Generate text from a prompt and optional context. Returns (generated_text, usage_info)."""
         pass
     
     @abstractmethod
-    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Iterator[str]:
+    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Iterator[str]:
         """Stream generate text from a prompt and optional context"""
         pass
 
@@ -93,11 +93,14 @@ class OpenAIGPT(StreamingLLM):
         """Get the name of the model"""
         return self._model_name
 
-    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Tuple[str, Optional[Dict[str, int]]]:
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Tuple[str, Optional[Dict[str, int]]]:
         """Generate text from a prompt and optional context"""
         
         messages = []
-        if not evaluation_mode:
+        if system_prompt_override is not None:
+            if system_prompt_override != "":
+                messages.append({"role": "system", "content": system_prompt_override})
+        elif not evaluation_mode:
             messages.append({"role": "system", "content": self._jeff_system_prompt})
         
         if context:
@@ -120,14 +123,17 @@ class OpenAIGPT(StreamingLLM):
             self._set_last_call_usage(None, "openai")
             return "Error: Could not get response from model.", None
     
-    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Iterator[str]:
+    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Iterator[str]:
         """Stream generate text from a prompt and optional context.
         Note: OpenAI streaming API does not provide token usage per chunk or easily post-stream.
         Call get_last_call_usage() after a non-streaming generate() for usage info.
         """
         
         messages = []
-        if not evaluation_mode:
+        if system_prompt_override is not None:
+            if system_prompt_override != "":
+                messages.append({"role": "system", "content": system_prompt_override})
+        elif not evaluation_mode:
             messages.append({"role": "system", "content": self._jeff_system_prompt})
 
         if context:
@@ -181,18 +187,37 @@ class GeminiLLM(StreamingLLM):
         """Get the name of the model"""
         return self._model_name
 
-    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Tuple[str, Optional[Dict[str, int]]]:
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Tuple[str, Optional[Dict[str, int]]]:
         """Generate text from a prompt and optional context"""
         
         if context:
             user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}\n\nAnswer:"
         else:
             user_content = prompt
-            
+
         model_to_use = self._model
-        if evaluation_mode:
-            # Create a new model instance without the system prompt for evaluation mode
-            model_to_use = genai.GenerativeModel(self._model_name)
+        current_system_instruction = self._jeff_system_prompt
+
+        if system_prompt_override is not None:
+            if system_prompt_override == "":
+                current_system_instruction = None
+            else:
+                current_system_instruction = system_prompt_override
+        elif evaluation_mode:
+            current_system_instruction = None
+
+        # Only re-initialize model if the system instruction changes
+        if current_system_instruction != self._model.system_instruction: # Check against the original model's instruction
+             model_to_use = genai.GenerativeModel(
+                model_name=self._model_name,
+                system_instruction=current_system_instruction
+            )
+        elif evaluation_mode and self._model.system_instruction is not None : # handles case where default model has system prompt but evaluation mode needs none
+             model_to_use = genai.GenerativeModel(
+                model_name=self._model_name,
+                system_instruction=None
+            )
+
 
         try:
             response = model_to_use.generate_content(user_content)
@@ -211,7 +236,7 @@ class GeminiLLM(StreamingLLM):
             print(f"Error during Gemini API call: {e}")
             return "Error: Could not get response from model.", None
     
-    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Iterator[str]:
+    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Iterator[str]:
         """Stream generate text from a prompt and optional context.
         Note: Gemini streaming API does not provide token usage per chunk or easily post-stream.
         Call get_last_call_usage() after a non-streaming generate() for usage info.
@@ -223,9 +248,27 @@ class GeminiLLM(StreamingLLM):
             user_content = prompt
             
         model_to_use = self._model
-        if evaluation_mode:
-            # Create a new model instance without the system prompt for evaluation mode
-            model_to_use = genai.GenerativeModel(self._model_name)
+        current_system_instruction = self._jeff_system_prompt
+
+        if system_prompt_override is not None:
+            if system_prompt_override == "":
+                current_system_instruction = None
+            else:
+                current_system_instruction = system_prompt_override
+        elif evaluation_mode:
+            current_system_instruction = None
+
+        # Only re-initialize model if the system instruction changes
+        if current_system_instruction != self._model.system_instruction: # Check against the original model's instruction
+            model_to_use = genai.GenerativeModel(
+                model_name=self._model_name,
+                system_instruction=current_system_instruction
+            )
+        elif evaluation_mode and self._model.system_instruction is not None : # handles case where default model has system prompt but evaluation mode needs none
+             model_to_use = genai.GenerativeModel(
+                model_name=self._model_name,
+                system_instruction=None
+            )
 
         try:
             stream = model_to_use.generate_content(user_content, stream=True)
@@ -268,7 +311,7 @@ class ClaudeLLM(StreamingLLM):
         """Get the name of the model"""
         return self._model_name
 
-    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Tuple[str, Optional[Dict[str, int]]]:
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Tuple[str, Optional[Dict[str, int]]]:
         """Generate text from a prompt and optional context"""
         
         if context:
@@ -276,7 +319,13 @@ class ClaudeLLM(StreamingLLM):
         else:
             user_content = prompt
         
-        system_prompt_to_use = self._jeff_system_prompt if not evaluation_mode else None
+        system_param_value: Optional[List[str]] = None
+        if system_prompt_override is not None:
+            if system_prompt_override != "":
+                system_param_value = [system_prompt_override]
+        elif not evaluation_mode:
+            system_param_value = [self._jeff_system_prompt]
+        # If evaluation_mode is True and system_prompt_override is None, system_param_value remains None
 
         request_params = {
             "model": self._model_name,
@@ -284,8 +333,8 @@ class ClaudeLLM(StreamingLLM):
             "messages": [{"role": "user", "content": user_content}]
         }
 
-        if system_prompt_to_use is not None:
-            request_params["system"] = [system_prompt_to_use] # Pass as a list containing the string
+        if system_param_value is not None:
+            request_params["system"] = system_param_value
 
         try:
             response = self._client.messages.create(**request_params)
@@ -297,7 +346,7 @@ class ClaudeLLM(StreamingLLM):
             self._set_last_call_usage(None, "anthropic")
             return "Error: Could not get response from model.", None
 
-    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Iterator[str]:
+    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Iterator[str]:
         """Stream generate text from a prompt and optional context"""
         
         if context:
@@ -305,15 +354,25 @@ class ClaudeLLM(StreamingLLM):
         else:
             user_content = prompt
 
-        system_prompt_to_use = self._jeff_system_prompt if not evaluation_mode else None
+        system_param_value: Optional[List[str]] = None # Use List[str] for system parameter
+        if system_prompt_override is not None:
+            if system_prompt_override != "":
+                system_param_value = [system_prompt_override]
+        elif not evaluation_mode:
+            system_param_value = [self._jeff_system_prompt]
+        # If evaluation_mode is True and system_prompt_override is None, system_param_value remains None
+
+        request_params = {
+            "model": self._model_name,
+            "max_tokens": 2048, # Default max_tokens, can be adjusted
+            "messages": [{"role": "user", "content": user_content}]
+        }
+        if system_param_value is not None:
+             request_params["system"] = system_param_value # Pass as a list containing the string
+
 
         try:
-            with self._client.messages.stream(
-                model=self._model_name,
-                max_tokens=2048, # Default max_tokens, can be adjusted
-                system=system_prompt_to_use,
-                messages=[{"role": "user", "content": user_content}]
-            ) as stream:
+            with self._client.messages.stream(**request_params) as stream:
                 for event in stream:
                     if event.type == "content_block_delta":
                         if event.delta.type == "text_delta":
@@ -353,11 +412,14 @@ class MistralLLM(StreamingLLM):
         """Get the name of the model"""
         return self._model_name
 
-    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Tuple[str, Optional[Dict[str, int]]]:
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Tuple[str, Optional[Dict[str, int]]]:
         """Generate text from a prompt and optional context"""
         
         messages = []
-        if not evaluation_mode:
+        if system_prompt_override is not None:
+            if system_prompt_override != "":
+                messages.append(SystemMessage(content=system_prompt_override))
+        elif not evaluation_mode:
             messages.append(SystemMessage(content=self._jeff_system_prompt))
         
         if context:
@@ -380,14 +442,17 @@ class MistralLLM(StreamingLLM):
             self._set_last_call_usage(None, "mistral")
             return "Error: Could not get response from model.", None
 
-    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False) -> Iterator[str]:
+    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Iterator[str]:
         """Stream generate text from a prompt and optional context.
         Note: Mistral streaming API does not provide token usage per chunk or easily post-stream.
         Call get_last_call_usage() after a non-streaming generate() for usage info.
         """
         
         messages = []
-        if not evaluation_mode:
+        if system_prompt_override is not None:
+            if system_prompt_override != "":
+                messages.append(SystemMessage(content=system_prompt_override))
+        elif not evaluation_mode:
             messages.append(SystemMessage(content=self._jeff_system_prompt))
 
         if context:

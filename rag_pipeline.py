@@ -657,12 +657,13 @@ class RAGPipeline:
             llm_cost=calculated_cost if calculated_cost is not None else 0.0
         )
     
-    def run(self, query: str) -> Tuple[str, List[str], Dict[str, Any]]:
+    def run(self, query: str, system_prompt_override: Optional[str] = None) -> Tuple[str, List[str], Dict[str, Any]]:
         """
         Process a query and return the response, contexts, and metrics (non-streaming).
         
         Args:
             query: The query to process
+            system_prompt_override: Optional system prompt to override the default
             
         Returns:
             Tuple[str, List[str], Dict[str, Any]]: Response text, contexts, and metrics
@@ -680,7 +681,12 @@ class RAGPipeline:
             context_str = "\n\n".join(retrieved_texts)
             
             # Generate response
-            response_text, usage_info = self.llm.generate(query, context_str, evaluation_mode=self.evaluation_mode)
+            response_text, usage_info = self.llm.generate(
+                prompt=query,
+                context=context_str,
+                evaluation_mode=self.evaluation_mode,
+                system_prompt_override=system_prompt_override
+            )
             
             # Calculate metrics
             self._metrics = self._calculate_metrics(start_time, usage_info)
@@ -689,12 +695,13 @@ class RAGPipeline:
         except Exception as e:
             raise RAGPipelineExecutionError(f"Failed to run pipeline: {str(e)}")
     
-    def stream_run(self, query: str):
+    def stream_run(self, query: str, system_prompt_override: Optional[str] = None):
         """
         Process a query and stream the response.
         
         Args:
             query: The query to process
+            system_prompt_override: Optional system prompt to override the default
             
         Yields:
             str: Response chunks
@@ -705,7 +712,8 @@ class RAGPipeline:
         try:
             # If we're in evaluation mode, use the non-streaming method instead
             if self.evaluation_mode:
-                response_text, _, _ = self.run(query)
+                # Pass system_prompt_override to self.run if in evaluation mode
+                response_text, _, _ = self.run(query, system_prompt_override=system_prompt_override)
                 yield response_text
                 return
                 
@@ -716,7 +724,12 @@ class RAGPipeline:
             context = "\n\n".join(retrieved_texts)
             
             # Stream response
-            for chunk in self.llm.stream_generate(query, context, evaluation_mode=self.evaluation_mode):
+            for chunk in self.llm.stream_generate(
+                prompt=query,
+                context=context,
+                evaluation_mode=self.evaluation_mode,
+                system_prompt_override=system_prompt_override
+            ):
                 if chunk is not None:
                     yield chunk
                 else:
