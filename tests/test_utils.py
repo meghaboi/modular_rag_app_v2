@@ -1,27 +1,30 @@
 import unittest
-from unittest.mock import patch, MagicMock, call
-import os
+from unittest.mock import patch, MagicMock  # Removed call
+
+# import os # Removed os
 import logging
 
 # Assuming utils.py is in the parent directory or accessible via PYTHONPATH
-from utils import determine_prompt_nature
+from utils.utils import determine_prompt_nature  # Corrected import path
 
 # Disable logging for tests unless specifically testing logging
 logging.disable(logging.CRITICAL)
 
+
 class TestDeterminePromptNature(unittest.TestCase):
 
-    @patch('utils.os.getenv')
-    @patch('utils.Anthropic')
+    @patch("utils.utils.os.getenv")  # Corrected patch path
+    @patch("utils.utils.Anthropic")  # Corrected patch path
     def test_valid_query_high_confidence(self, MockAnthropic, mock_getenv):
         mock_getenv.return_value = "fake_api_key"
         mock_client = MockAnthropic.return_value
         mock_response = MagicMock()
         mock_response.content = [
-            MagicMock(type="tool_use", name="classify_prompt_nature", input={
-                "nature": "question_answering",
-                "confidence": 0.9
-            })
+            MagicMock(
+                type="tool_use",
+                name="classify_prompt_nature",
+                input={"nature": "question_answering", "confidence": 0.9},
+            )
         ]
         mock_client.messages.create.return_value = mock_response
 
@@ -29,26 +32,27 @@ class TestDeterminePromptNature(unittest.TestCase):
         self.assertEqual(result, "question_answering")
         mock_client.messages.create.assert_called_once()
 
-    @patch('utils.os.getenv')
-    @patch('utils.Anthropic')
+    @patch("utils.utils.os.getenv")  # Corrected patch path
+    @patch("utils.utils.Anthropic")  # Corrected patch path
     def test_valid_query_low_confidence(self, MockAnthropic, mock_getenv):
         mock_getenv.return_value = "fake_api_key"
         mock_client = MockAnthropic.return_value
         mock_response = MagicMock()
         mock_response.content = [
-            MagicMock(type="tool_use", name="classify_prompt_nature", input={
-                "nature": "question_answering",
-                "confidence": 0.5
-            })
+            MagicMock(
+                type="tool_use",
+                name="classify_prompt_nature",
+                input={"nature": "question_answering", "confidence": 0.5},
+            )
         ]
         mock_client.messages.create.return_value = mock_response
 
         result = determine_prompt_nature("Tell me about photosynthesis.")
         self.assertEqual(result, "general_discussion")
 
-    @patch('utils.os.getenv')
-    @patch('utils.Anthropic')
-    @patch('utils.logging.error')
+    @patch("utils.utils.os.getenv")  # Corrected patch path
+    @patch("utils.utils.Anthropic")  # Corrected patch path
+    @patch("utils.utils.logging.error")  # Corrected patch path
     def test_anthropic_api_error(self, mock_log_error, MockAnthropic, mock_getenv):
         mock_getenv.return_value = "fake_api_key"
         mock_client = MockAnthropic.return_value
@@ -58,34 +62,42 @@ class TestDeterminePromptNature(unittest.TestCase):
         self.assertEqual(result, "general_discussion")
         mock_log_error.assert_called_with(
             "Error determining prompt nature for query 'This will cause an error.': API Failure",
-            exc_info=True
+            exc_info=True,
         )
 
-    @patch('utils.os.getenv')
-    @patch('utils.Anthropic')
+    @patch("utils.utils.os.getenv")  # Corrected patch path
+    @patch("utils.utils.Anthropic")  # Corrected patch path
     def test_unexpected_nature_string(self, MockAnthropic, mock_getenv):
         mock_getenv.return_value = "fake_api_key"
         mock_client = MockAnthropic.return_value
         mock_response = MagicMock()
         mock_response.content = [
-            MagicMock(type="tool_use", name="classify_prompt_nature", input={
-                "nature": "unexpected_value", # Not in ALLOWED_NATURES
-                "confidence": 0.9
-            })
+            MagicMock(
+                type="tool_use",
+                name="classify_prompt_nature",
+                input={
+                    "nature": "unexpected_value",  # Not in ALLOWED_NATURES
+                    "confidence": 0.9,
+                },
+            )
         ]
         mock_client.messages.create.return_value = mock_response
 
         result = determine_prompt_nature("A query leading to unexpected nature.")
         self.assertEqual(result, "general_discussion")
 
-    @patch('utils.os.getenv')
-    @patch('utils.Anthropic')
-    @patch('utils.logging.warning')
-    def test_no_tool_call_in_response(self, mock_log_warning, MockAnthropic, mock_getenv):
+    @patch("utils.utils.os.getenv")  # Corrected patch path
+    @patch("utils.utils.Anthropic")  # Corrected patch path
+    @patch("utils.utils.logging.warning")  # Corrected patch path
+    def test_no_tool_call_in_response(
+        self, mock_log_warning, MockAnthropic, mock_getenv
+    ):
         mock_getenv.return_value = "fake_api_key"
         mock_client = MockAnthropic.return_value
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(type="text", text="Some text")] # No tool_use
+        mock_response.content = [
+            MagicMock(type="text", text="Some text")
+        ]  # No tool_use
         mock_client.messages.create.return_value = mock_response
 
         query = "Query with no tool call."
@@ -95,10 +107,10 @@ class TestDeterminePromptNature(unittest.TestCase):
             f"No tool call found in response for query '{query}'. Falling back to default."
         )
 
-    @patch('utils.os.getenv')
-    @patch('utils.logging.error')
+    @patch("utils.utils.os.getenv")  # Corrected patch path
+    @patch("utils.utils.logging.error")  # Corrected patch path
     def test_missing_api_key(self, mock_log_error, mock_getenv):
-        mock_getenv.return_value = None # Simulate missing API key
+        mock_getenv.return_value = None  # Simulate missing API key
 
         result = determine_prompt_nature("Query when API key is missing.")
         self.assertEqual(result, "general_discussion")
@@ -106,5 +118,6 @@ class TestDeterminePromptNature(unittest.TestCase):
             "ANTHROPIC_API_KEY not found. Cannot determine prompt nature."
         )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

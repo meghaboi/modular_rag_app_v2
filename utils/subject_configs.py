@@ -1,12 +1,13 @@
 from typing import Dict, Any
 from dataclasses import dataclass
-from enums import (
+from .enums import (  # Relative import
     EmbeddingModelType,
     RerankerModelType,
     LLMModelType,
     VectorStoreType,
-    ChunkingStrategyType
+    ChunkingStrategyType,
 )
+
 
 @dataclass
 class SubjectConfig:
@@ -14,6 +15,7 @@ class SubjectConfig:
     chunk_overlap: int
     top_k: int
     hybrid_alpha: float = 0.5
+
 
 # Default configuration values
 DEFAULT_CHUNK_SIZE = 500
@@ -34,85 +36,65 @@ SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
         chunk_size=DEFAULT_CHUNK_SIZE,
         chunk_overlap=DEFAULT_CHUNK_OVERLAP,
         top_k=DEFAULT_TOP_K,
-        hybrid_alpha=DEFAULT_HYBRID_ALPHA
+        hybrid_alpha=DEFAULT_HYBRID_ALPHA,
     ),
     "mathematics": SubjectConfig(
         chunk_size=200,  # Smaller chunks for precise mathematical content
         chunk_overlap=50,  # Higher overlap to maintain context
         top_k=2,  # More documents for comprehensive coverage
-        hybrid_alpha=0.7  # Higher vector weight for mathematical precision
+        hybrid_alpha=0.7,  # Higher vector weight for mathematical precision
     ),
     "science": SubjectConfig(
-        chunk_size=400,
-        chunk_overlap=75,
-        top_k=4,
-        hybrid_alpha=0.6
+        chunk_size=400, chunk_overlap=75, top_k=4, hybrid_alpha=0.6
     ),
     "history": SubjectConfig(
         chunk_size=600,  # Larger chunks for narrative context
         chunk_overlap=100,
         top_k=5,
-        hybrid_alpha=0.4  # Lower vector weight for more keyword matching
+        hybrid_alpha=0.4,  # Lower vector weight for more keyword matching
     ),
     "literature": SubjectConfig(
-        chunk_size=500,
-        chunk_overlap=100,
-        top_k=4,
-        hybrid_alpha=0.5
+        chunk_size=500, chunk_overlap=100, top_k=4, hybrid_alpha=0.5
     ),
     "computer_science": SubjectConfig(
         chunk_size=350,  # Smaller chunks for code and technical content
         chunk_overlap=75,
         top_k=4,
-        hybrid_alpha=0.7  # Higher vector weight for technical precision
+        hybrid_alpha=0.7,  # Higher vector weight for technical precision
     ),
     "medicine": SubjectConfig(
-        chunk_size=450,
-        chunk_overlap=100,
-        top_k=5,
-        hybrid_alpha=0.6
+        chunk_size=450, chunk_overlap=100, top_k=5, hybrid_alpha=0.6
     ),
     "law": SubjectConfig(
         chunk_size=550,  # Larger chunks for legal context
         chunk_overlap=100,
         top_k=5,
-        hybrid_alpha=0.4  # Lower vector weight for more keyword matching
+        hybrid_alpha=0.4,  # Lower vector weight for more keyword matching
     ),
     "question_answering": SubjectConfig(
-        chunk_size=256,
-        chunk_overlap=50,
-        top_k=5,
-        hybrid_alpha=0.75
+        chunk_size=256, chunk_overlap=50, top_k=5, hybrid_alpha=0.75
     ),
     "summarization": SubjectConfig(
-        chunk_size=768,
-        chunk_overlap=150,
-        top_k=3,
-        hybrid_alpha=0.4
+        chunk_size=768, chunk_overlap=150, top_k=3, hybrid_alpha=0.4
     ),
     "comparison": SubjectConfig(
-        chunk_size=512,
-        chunk_overlap=100,
-        top_k=4,
-        hybrid_alpha=0.6
+        chunk_size=512, chunk_overlap=100, top_k=4, hybrid_alpha=0.6
     ),
     "code_generation": SubjectConfig(
-        chunk_size=384,
-        chunk_overlap=75,
-        top_k=4,
-        hybrid_alpha=0.7
+        chunk_size=384, chunk_overlap=75, top_k=4, hybrid_alpha=0.7
     ),
     "general_discussion": SubjectConfig(
         chunk_size=DEFAULT_CHUNK_SIZE,
         chunk_overlap=DEFAULT_CHUNK_OVERLAP,
         top_k=DEFAULT_TOP_K,
-        hybrid_alpha=DEFAULT_HYBRID_ALPHA
-    )
+        hybrid_alpha=DEFAULT_HYBRID_ALPHA,
+    ),
 }
+
 
 def get_subject_config(subject: str) -> SubjectConfig:
     """
     Get the configuration for a specific subject.
     Falls back to general configuration if subject not found.
     """
-    return SUBJECT_CONFIGS.get(subject.lower(), SUBJECT_CONFIGS["general"]) 
+    return SUBJECT_CONFIGS.get(subject.lower(), SUBJECT_CONFIGS["general"])
