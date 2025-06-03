@@ -43,8 +43,8 @@ def display_settings_panel():
         help="Choose the subject of your textbook for optimal RAG configuration"
     )
 
-    # Update RAG configuration when subject changes
-    if st.session_state.pipeline is not None:
+    # Only update RAG configuration in evaluation mode
+    if st.session_state.pipeline is not None and st.session_state.mode == "evaluation":
         update_rag_configuration(selected_subject, st.session_state.pipeline)
 
     mode_options = {"💬 Chat with JEFF": "chat", "🧪 Test Setups (Evaluation)": "evaluation"}
@@ -66,7 +66,7 @@ def display_settings_panel():
         st.rerun()
 
     st.sidebar.header("📚 Load Textbook")
-    uploaded_file = st.sidebar.file_uploader("Upload .txt file", type=['txt'], key="file_uploader")
+    uploaded_file = st.sidebar.file_uploader("Upload .txt or .pdf file", type=['txt', 'pdf'], key="file_uploader")
     if uploaded_file is not None:
         if uploaded_file.name != st.session_state.get('last_uploaded_filename', None):
             logging.info(f"New file upload detected: {uploaded_file.name}")
@@ -95,7 +95,7 @@ def display_settings_panel():
     st.sidebar.markdown("---")
     if st.session_state.mode == "evaluation":
         IsInEvaluationMode = True
-        st.sidebar.header("��️ Evaluation Config")
+        st.sidebar.header("🧪 Evaluation Config")
         st.sidebar.info("Adjust settings for Evaluation Mode. Press 'Initialize JEFF' after changing.")
         config_expander_expanded = True
     else: 
@@ -116,70 +116,81 @@ def display_settings_panel():
              try: return options_list.index(current_value)
              except ValueError: return default_index
 
-        st.session_state.embedding_model = st.selectbox("Embedding Model", options=embedding_options, index=get_safe_index(embedding_options, st.session_state.embedding_model), key="sb_embedding_model", disabled=disable_widgets)
-        st.session_state.reranker = st.selectbox("Re-ranker Model", options=reranker_options, index=get_safe_index(reranker_options, st.session_state.reranker), key="sb_reranker", disabled=disable_widgets)
-        st.session_state.llm_model = st.selectbox("LLM Model", options=llm_options, index=get_safe_index(llm_options, st.session_state.llm_model), key="sb_llm_model", disabled=disable_widgets)
-        st.session_state.vector_store = st.selectbox("Vector Store", options=vector_store_options, index=get_safe_index(vector_store_options, st.session_state.vector_store), key="sb_vector_store", disabled=disable_widgets)
-        st.session_state.chunking_strategy = st.selectbox("Chunking Strategy", options=chunking_strategy_options, index=get_safe_index(chunking_strategy_options, st.session_state.chunking_strategy), key="sb_chunking_strategy", disabled=disable_widgets)
+        # In chat mode, show fixed embedding model, in evaluation mode allow selection
+        if st.session_state.mode == "chat":
+            st.sidebar.text(f"Embedding Model: {DEFAULT_EMBEDDING_MODEL.value}")
+            st.session_state.embedding_model = DEFAULT_EMBEDDING_MODEL.value
+        else:
+            st.session_state.embedding_model = st.selectbox(
+                "Embedding Model", 
+                options=embedding_options, 
+                index=get_safe_index(embedding_options, st.session_state.embedding_model), 
+                key="sb_embedding_model"
+            )
 
-        try: 
-            selected_strategy_enum = ChunkingStrategyType.from_string(st.session_state.chunking_strategy)
-            selected_strategy_obj = ChunkingStrategyFactory.get_strategy(selected_strategy_enum.value)
-            if selected_strategy_obj: st.caption(f"**{selected_strategy_enum.value.replace('_', ' ').title()}:** {selected_strategy_obj.description}")
-        except Exception as e: logging.warning(f"Failed to get chunking description: {e}")
+        # In chat mode, show current values without ability to change
+        if st.session_state.mode == "chat":
+            st.sidebar.text(f"Re-ranker Model: {st.session_state.get('reranker', DEFAULT_RERANKER_MODEL.value)}")
+            st.sidebar.text(f"LLM Model: {st.session_state.get('llm_model', DEFAULT_LLM_MODEL.value)}")
+            st.sidebar.text(f"Vector Store: {st.session_state.get('vector_store', DEFAULT_VECTOR_STORE.value)}")
+            st.sidebar.text(f"Chunking Strategy: {st.session_state.get('chunking_strategy', DEFAULT_CHUNKING_STRATEGY.value)}")
+            st.sidebar.text(f"Chunk Size: {st.session_state.get('chunk_size', DEFAULT_CHUNK_SIZE)}")
+            st.sidebar.text(f"Chunk Overlap: {st.session_state.get('chunk_overlap', DEFAULT_CHUNK_OVERLAP)}")
+            st.sidebar.text(f"Top K: {st.session_state.get('top_k', DEFAULT_TOP_K)}")
+        else:
+            st.session_state.reranker = st.selectbox("Re-ranker Model", options=reranker_options, index=get_safe_index(reranker_options, st.session_state.reranker), key="sb_reranker")
+            st.session_state.llm_model = st.selectbox("LLM Model", options=llm_options, index=get_safe_index(llm_options, st.session_state.llm_model), key="sb_llm_model")
+            st.session_state.vector_store = st.selectbox("Vector Store", options=vector_store_options, index=get_safe_index(vector_store_options, st.session_state.vector_store), key="sb_vector_store")
+            st.session_state.chunking_strategy = st.selectbox("Chunking Strategy", options=chunking_strategy_options, index=get_safe_index(chunking_strategy_options, st.session_state.chunking_strategy), key="sb_chunking_strategy")
 
-        # Get subject-specific configuration
-        subject_config = get_subject_config(selected_subject)
-        
-        # Update slider values based on subject configuration
-        st.session_state.chunk_size = st.slider(
-            "Chunk Size (tokens)", 
-            min_value=100, 
-            max_value=2000, 
-            value=subject_config.chunk_size, 
-            step=50, 
-            key="sb_chunk_size", 
-            disabled=disable_widgets,
-            help="Maximum number of tokens per chunk"
-        )
-        
-        st.session_state.chunk_overlap = st.slider(
-            "Chunk Overlap (tokens)", 
-            min_value=0, 
-            max_value=500, 
-            value=subject_config.chunk_overlap, 
-            step=25, 
-            key="sb_chunk_overlap", 
-            disabled=disable_widgets, 
-            help="Number of tokens to overlap between chunks"
-        )
-        
-        st.session_state.top_k = st.slider(
-            "Docs to Retrieve (Top K)", 
-            min_value=1, 
-            max_value=15, 
-            value=subject_config.top_k if hasattr(subject_config, 'top_k') else DEFAULT_TOP_K, 
-            step=1, 
-            key="sb_top_k", 
-            disabled=disable_widgets
-        )
+            # Get subject-specific configuration
+            subject_config = get_subject_config(selected_subject)
+            
+            # Update slider values based on subject configuration
+            st.session_state.chunk_size = st.slider(
+                "Chunk Size (tokens)", 
+                min_value=100, 
+                max_value=2000, 
+                value=subject_config.chunk_size, 
+                step=50, 
+                key="sb_chunk_size",
+                help="Maximum number of tokens per chunk"
+            )
+            
+            st.session_state.chunk_overlap = st.slider(
+                "Chunk Overlap (tokens)", 
+                min_value=0, 
+                max_value=500, 
+                value=subject_config.chunk_overlap, 
+                step=25, 
+                key="sb_chunk_overlap",
+                help="Number of tokens to overlap between chunks"
+            )
+            
+            st.session_state.top_k = st.slider(
+                "Docs to Retrieve (Top K)", 
+                min_value=1, 
+                max_value=15, 
+                value=subject_config.top_k if hasattr(subject_config, 'top_k') else DEFAULT_TOP_K, 
+                step=1, 
+                key="sb_top_k"
+            )
 
-        try: selected_vector_store_enum = VectorStoreType.from_string(st.session_state.vector_store)
-        except ValueError: selected_vector_store_enum = None
-        if selected_vector_store_enum == VectorStoreType.HYBRID:
-             st.caption("Hybrid search mixes keyword and vector search.")
-             st.session_state.hybrid_alpha = st.slider(
-                 "Vector Weight (alpha)", 
-                 0.0, 
-                 1.0, 
-                 subject_config.hybrid_alpha if hasattr(subject_config, 'hybrid_alpha') else DEFAULT_HYBRID_ALPHA, 
-                 0.05, 
-                 key="sb_hybrid_alpha", 
-                 disabled=disable_widgets, 
-                 help="1.0=vector, 0.0=keyword"
-             )
-             kw_weight = 1.0 - float(st.session_state.get('hybrid_alpha', 0.5))
-             st.write(f"Keyword Weight: {kw_weight:.2f}")
+            try: selected_vector_store_enum = VectorStoreType.from_string(st.session_state.vector_store)
+            except ValueError: selected_vector_store_enum = None
+            if selected_vector_store_enum == VectorStoreType.HYBRID:
+                 st.caption("Hybrid search mixes keyword and vector search.")
+                 st.session_state.hybrid_alpha = st.slider(
+                     "Vector Weight (alpha)", 
+                     0.0, 
+                     1.0, 
+                     subject_config.hybrid_alpha if hasattr(subject_config, 'hybrid_alpha') else DEFAULT_HYBRID_ALPHA, 
+                     0.05, 
+                     key="sb_hybrid_alpha",
+                     help="1.0=vector, 0.0=keyword"
+                 )
+                 kw_weight = 1.0 - float(st.session_state.get('hybrid_alpha', 0.5))
+                 st.write(f"Keyword Weight: {kw_weight:.2f}")
 
         # Add current configuration scores section
         if st.session_state.pipeline and hasattr(st.session_state.pipeline, 'last_evaluation_scores'):

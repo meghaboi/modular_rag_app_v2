@@ -15,10 +15,10 @@ from vector_stores import VectorStoreFactory
 from llm_models import LLMFactory
 from rag_pipeline import RAGPipeline, ChunkingStrategyFactory
 from config import check_api_keys
+from subject_configs import DEFAULT_EMBEDDING_MODEL
 
 def initialize_pipeline(
     file_path: str,
-    embedding_model_enum: EmbeddingModelType,
     vector_store_enum: VectorStoreType,
     reranker_enum: RerankerModelType,
     llm_enum: LLMModelType,
@@ -33,7 +33,6 @@ def initialize_pipeline(
     
     Args:
         file_path (str): Path to the document file
-        embedding_model_enum (EmbeddingModelType): Selected embedding model
         vector_store_enum (VectorStoreType): Selected vector store
         reranker_enum (RerankerModelType): Selected reranker
         llm_enum (LLMModelType): Selected LLM
@@ -47,58 +46,38 @@ def initialize_pipeline(
         Optional[RAGPipeline]: Initialized pipeline or None if initialization fails
     """
     logging.info(f"Attempting to initialize RAG pipeline with config:")
-    logging.info(f"  Embedding: {embedding_model_enum.value}, Vector Store: {vector_store_enum.value}, "
+    logging.info(f"  Embedding: {DEFAULT_EMBEDDING_MODEL.value}, Vector Store: {vector_store_enum.value}, "
                 f"Reranker: {reranker_enum.value}, LLM: {llm_enum.value}")
-    logging.info(f"  Chunking: {chunking_strategy_enum.value}, Size: {chunk_size}, "
-                f"Overlap: {chunk_overlap}, Top K: {top_k}, Hybrid Alpha: {hybrid_alpha}")
-
-    if not file_path or not os.path.exists(file_path):
-        st.error("Cannot initialize pipeline: Document file path is invalid or missing.")
-        logging.error("Pipeline initialization failed: Invalid file path.")
-        return None
-
+    
     try:
-        # Check for required API keys
-        missing_keys = check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_enum)
-        if missing_keys:
-            st.error(f"Missing required API keys: {', '.join(missing_keys)}")
-            return None
+        # Initialize components with fixed embedding model
+        embedding_model_instance = EmbeddingModelFactory.create_model(DEFAULT_EMBEDDING_MODEL)
+        vector_store_instance = VectorStoreFactory.create_store(vector_store_enum, alpha=hybrid_alpha) if vector_store_enum == VectorStoreType.HYBRID else VectorStoreFactory.create_store(vector_store_enum)
+        reranker_instance = RerankerFactory.create_reranker(reranker_enum) if reranker_enum != RerankerModelType.NONE else None
+        llm_instance = LLMFactory.create_llm(llm_enum)
+        chunking_strategy_instance = ChunkingStrategyFactory.get_strategy(chunking_strategy_enum.value)
 
-        # Initialize components
-        embedding_model = EmbeddingModelFactory.create_model(embedding_model_enum)
-        
-        if vector_store_enum == VectorStoreType.HYBRID:
-            vector_store = VectorStoreFactory.create_store(vector_store_enum, alpha=hybrid_alpha)
-        else:
-            vector_store = VectorStoreFactory.create_store(vector_store_enum)
+        IsInEvaluationMode = False
+        if st.session_state.mode == "evaluation":
+            IsInEvaluationMode = True
 
-        reranker = None
-        if reranker_enum != RerankerModelType.NONE:
-            reranker = RerankerFactory.create_reranker(reranker_enum)
-
-        llm = LLMFactory.create_llm(llm_enum)
-        chunking_strategy = ChunkingStrategyFactory.get_strategy(chunking_strategy_enum.value)
-
-        # Create and initialize pipeline
         pipeline = RAGPipeline(
-            embedding_model=embedding_model,
-            vector_store=vector_store,
-            reranker=reranker,
-            llm=llm,
-            chunking_strategy=chunking_strategy,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            top_k=top_k
+            embedding_model=embedding_model_instance,
+            vector_store=vector_store_instance,
+            reranker=reranker_instance,
+            llm=llm_instance,
+            top_k=top_k,
+            chunking_strategy=chunking_strategy_instance,
+            evaluation_mode=IsInEvaluationMode 
         )
 
-        # Initialize with document
-        pipeline.initialize(file_path)
-        logging.info("Pipeline initialized successfully")
+        # Indexing
+        pipeline.index_documents(file_path, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        
         return pipeline
-
+        
     except Exception as e:
-        st.error(f"Failed to initialize pipeline: {str(e)}")
-        logging.error(f"Pipeline initialization failed: {e}", exc_info=True)
+        logging.error(f"Failed to initialize pipeline: {str(e)}")
         return None
 
 def run_pipeline_with_config(
@@ -137,8 +116,8 @@ def run_pipeline_with_config(
     """
     try:
         pipeline = initialize_pipeline(
-            file_path, embedding_model_enum, vector_store_enum, reranker_enum,
-            llm_enum, chunking_strategy_enum, hybrid_alpha, chunk_size,
+            file_path, vector_store_enum, reranker_enum, llm_enum,
+            chunking_strategy_enum, hybrid_alpha, chunk_size,
             chunk_overlap, top_k
         )
         

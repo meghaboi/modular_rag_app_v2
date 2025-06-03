@@ -21,13 +21,14 @@ DEFAULT_CHUNK_OVERLAP = 50
 DEFAULT_TOP_K = 3
 DEFAULT_HYBRID_ALPHA = 0.5
 
+# Use Mistral as the fixed embedding model
 DEFAULT_EMBEDDING_MODEL = EmbeddingModelType.MISTRAL
 DEFAULT_VECTOR_STORE = VectorStoreType.CHROMA
 DEFAULT_RERANKER_MODEL = RerankerModelType.VOYAGE_2
 DEFAULT_LLM_MODEL = LLMModelType.CLAUDE_37_SONNET
 DEFAULT_CHUNKING_STRATEGY = ChunkingStrategyType.HIERARCHICAL
 
-# Subject-specific configurations
+# Subject-specific configurations - only varying chunking and search parameters
 SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
     "general": SubjectConfig(
         chunk_size=DEFAULT_CHUNK_SIZE,
@@ -36,9 +37,9 @@ SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
         hybrid_alpha=DEFAULT_HYBRID_ALPHA
     ),
     "mathematics": SubjectConfig(
-        chunk_size=300,  # Smaller chunks for precise mathematical content
-        chunk_overlap=100,  # Higher overlap to maintain context
-        top_k=5,  # More documents for comprehensive coverage
+        chunk_size=200,  # Smaller chunks for precise mathematical content
+        chunk_overlap=50,  # Higher overlap to maintain context
+        top_k=2,  # More documents for comprehensive coverage
         hybrid_alpha=0.7  # Higher vector weight for mathematical precision
     ),
     "science": SubjectConfig(

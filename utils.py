@@ -8,6 +8,7 @@ from typing import Optional, List, Dict
 from openai import OpenAI
 from anthropic import Anthropic
 import random
+from PyPDF2 import PdfReader
 from enums import (
     EmbeddingModelType,
     RerankerModelType,
@@ -22,8 +23,38 @@ def save_uploaded_file(uploaded_file):
         file_suffix = os.path.splitext(uploaded_file.name)[1] if '.' in uploaded_file.name else '.txt'
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_suffix) as temp:
             temp.write(uploaded_file.getvalue())
-            logging.info(f"Saved uploaded file '{uploaded_file.name}' to temporary path: {temp.name}")
-            return temp.name
+            temp_path = temp.name
+            logging.info(f"Saved uploaded file '{uploaded_file.name}' to temporary path: {temp_path}")
+            
+            # If it's a PDF file, convert it to text
+            if file_suffix.lower() == '.pdf':
+                try:
+                    # Create a new temporary file for the text content
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as text_temp:
+                        # Read the PDF and extract text
+                        pdf_reader = PdfReader(temp_path)
+                        text_content = ""
+                        for page in pdf_reader.pages:
+                            text_content += page.extract_text() + "\n"
+                        
+                        # Write the extracted text to the new temporary file
+                        text_temp.write(text_content.encode('utf-8'))
+                        text_temp_path = text_temp.name
+                    
+                    # Close the PDF reader and delete the original PDF temporary file
+                    pdf_reader = None  # Release the file handle
+                    try:
+                        os.unlink(temp_path)
+                        logging.info(f"Converted PDF to text and saved to: {text_temp_path}")
+                    except Exception as e:
+                        logging.warning(f"Could not delete original PDF file: {e}")
+                    
+                    return text_temp_path
+                except Exception as e:
+                    logging.error(f"Error converting PDF to text: {e}")
+                    return None
+            
+            return temp_path
     except Exception as e:
         logging.error(f"Error saving uploaded file: {e}")
         return None
