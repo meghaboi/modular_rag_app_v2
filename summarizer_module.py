@@ -37,11 +37,8 @@ def extract_main_points(file_path: str, llm: StreamingLLM) -> List[str]:
     # Instructing the LLM to return a numbered list for easier parsing.
     user_prompt_for_extraction = (
         "Please extract the key topics or main points from the following text. "
-        "Present them as a numbered list (e.g., 1. Point one, 2. Point two, ...).
-
-"
-        "Text:
-"
+        "Present them as a numbered list (e.g., 1. Point one, 2. Point two, ...).\n\n"
+        "Text:\n"
         f"{file_content}"
     )
 

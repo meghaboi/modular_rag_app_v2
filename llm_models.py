@@ -319,12 +319,12 @@ class ClaudeLLM(StreamingLLM):
         else:
             user_content = prompt
         
-        system_param_value: Optional[List[str]] = None
+        system_param_value: Optional[str] = None
         if system_prompt_override is not None:
             if system_prompt_override != "":
-                system_param_value = [system_prompt_override]
+                system_param_value = system_prompt_override
         elif not evaluation_mode:
-            system_param_value = [self._jeff_system_prompt]
+            system_param_value = self._jeff_system_prompt
         # If evaluation_mode is True and system_prompt_override is None, system_param_value remains None
 
         request_params = {
@@ -354,12 +354,12 @@ class ClaudeLLM(StreamingLLM):
         else:
             user_content = prompt
 
-        system_param_value: Optional[List[str]] = None # Use List[str] for system parameter
+        system_param_value: Optional[str] = None
         if system_prompt_override is not None:
             if system_prompt_override != "":
-                system_param_value = [system_prompt_override]
+                system_param_value = system_prompt_override
         elif not evaluation_mode:
-            system_param_value = [self._jeff_system_prompt]
+            system_param_value = self._jeff_system_prompt
         # If evaluation_mode is True and system_prompt_override is None, system_param_value remains None
 
         request_params = {
@@ -368,8 +368,7 @@ class ClaudeLLM(StreamingLLM):
             "messages": [{"role": "user", "content": user_content}]
         }
         if system_param_value is not None:
-             request_params["system"] = system_param_value # Pass as a list containing the string
-
+            request_params["system"] = system_param_value
 
         try:
             with self._client.messages.stream(**request_params) as stream:
