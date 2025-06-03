@@ -13,6 +13,7 @@ import numpy as np
 from token_utils import TokenCounter, TokenCostManager
 import logging
 import time
+from dataclasses import dataclass
 
 class HybridSearch:
     """Combines dense vector search with sparse keyword search (BM25)"""
@@ -494,6 +495,45 @@ class ChunkingStrategyFactory:
             "Semantic": SemanticChunking()
         }
 
+class RAGPipelineError(Exception):
+    """Base exception class for RAG pipeline errors"""
+    pass
+
+class RAGPipelineInitializationError(RAGPipelineError):
+    """Raised when pipeline initialization fails"""
+    pass
+
+class RAGPipelineExecutionError(RAGPipelineError):
+    """Raised when pipeline execution fails"""
+    pass
+
+class RAGPipelineEvaluationError(RAGPipelineError):
+    """Raised when pipeline evaluation fails"""
+    pass
+
+@dataclass
+class PipelineMetrics:
+    """Metrics for pipeline execution"""
+    total_time: float
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    llm_cost: float
+    evaluation_scores: Optional[Dict[str, float]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert metrics to dictionary"""
+        metrics_dict = {
+            "total_time": self.total_time,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+            "llm_cost": self.llm_cost
+        }
+        if self.evaluation_scores:
+            metrics_dict.update(self.evaluation_scores)
+        return metrics_dict
+
 class RAGPipeline:
     """RAG Pipeline that combines all components with streaming support"""
     
@@ -501,187 +541,205 @@ class RAGPipeline:
                  llm, reranker=None, top_k=3,
                  chunking_strategy=None, chunk_size=1000, 
                  chunk_overlap=200, evaluation_mode=False):
-        """Initialize the RAG pipeline with the selected components"""
-        self.embedding_model = embedding_model
-        self.vector_store = vector_store
-        self.reranker = reranker
-        self.llm = llm
-        self.top_k = top_k
-        self.documents = []
-        self.chunking_strategy = chunking_strategy
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-        self.evaluation_mode = evaluation_mode
-        self.last_evaluation_scores = None  # Store the last evaluation scores
-        self.last_metrics = {}  # Store the last performance metrics
-        self.last_llm_usage = None # Store usage from the last LLM call
-    
-    def initialize(self, file_path: str) -> None:
-        """Initialize the pipeline with a document file"""
-        self.index_documents(file_path, self.chunk_size, self.chunk_overlap)
+        """
+        Initialize the RAG pipeline with the selected components.
+        
+        Args:
+            embedding_model: Model for generating embeddings
+            vector_store: Vector store for document storage and retrieval
+            llm: Language model for response generation
+            reranker: Optional reranker for improving retrieval quality
+            top_k: Number of documents to retrieve
+            chunking_strategy: Strategy for document chunking
+            chunk_size: Size of document chunks
+            chunk_overlap: Overlap between chunks
+            evaluation_mode: Whether to run in evaluation mode
+            
+        Raises:
+            RAGPipelineInitializationError: If initialization fails
+        """
+        try:
+            self.embedding_model = embedding_model
+            self.vector_store = vector_store
+            self.reranker = reranker
+            self.llm = llm
+            self.top_k = top_k
+            self.documents = []
+            self.chunking_strategy = chunking_strategy
+            self.chunk_size = chunk_size
+            self.chunk_overlap = chunk_overlap
+            self.evaluation_mode = evaluation_mode
+            self._metrics = PipelineMetrics(0.0, 0, 0, 0, 0.0)
+        except Exception as e:
+            raise RAGPipelineInitializationError(f"Failed to initialize pipeline: {str(e)}")
     
     def index_documents(self, file_path: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> None:
-        """Index documents from a file"""
-        # Read file
-        with open(file_path, 'r', encoding='utf-8') as f:
-            text = f.read()
+        """
+        Index documents from a file.
         
-        # Split text into chunks using the selected strategy
-        chunks = self.chunking_strategy.chunk_text(text, chunk_size, chunk_overlap)
-        self.documents = chunks
-        
-        # Get embeddings for chunks
-        embeddings = self.embedding_model.embed_documents(chunks)
-        
-        # Add chunks to vector store
-        self.vector_store.add_documents(chunks, embeddings)
-    
-    def retrieve_context(self, query: str) -> list:
-        """Retrieve relevant contexts for a given query"""
-        # Get query embedding
-        query_embedding = self.embedding_model.embed_query(query)
-        
-        # Retrieve documents - check if vector store supports hybrid search
-        if hasattr(self.vector_store, 'search') and 'query' in self.vector_store.search.__code__.co_varnames:
-            # Vector store supports hybrid search
-            retrieved_docs = self.vector_store.search(query_embedding, self.top_k, query=query)
-        else:
-            # Standard vector search
-            retrieved_docs = self.vector_store.search(query_embedding, self.top_k)
+        Args:
+            file_path: Path to the document file
+            chunk_size: Size of document chunks
+            chunk_overlap: Overlap between chunks
             
-        retrieved_texts = [doc[0] for doc in retrieved_docs]
-        
-        # Apply reranking if available
-        if self.reranker and retrieved_texts:
-            reranked_docs = self.reranker.rerank(query, retrieved_texts)
-            # Select top 5 chunks after reranking
-            reranked_docs = reranked_docs[:5]
-            retrieved_texts = [doc[0] for doc in reranked_docs]
-        
-        return retrieved_texts
+        Raises:
+            RAGPipelineExecutionError: If indexing fails
+        """
+        try:
+            # Read file
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            
+            # Split text into chunks using the selected strategy
+            chunks = self.chunking_strategy.chunk_text(text, chunk_size, chunk_overlap)
+            self.documents = chunks
+            
+            # Get embeddings for chunks
+            embeddings = self.embedding_model.embed_documents(chunks)
+            
+            # Add chunks to vector store
+            self.vector_store.add_documents(chunks, embeddings)
+        except Exception as e:
+            raise RAGPipelineExecutionError(f"Failed to index documents: {str(e)}")
     
-    def run(self, query: str) -> Tuple[str, List[str], Dict[str, Any]]:
-        """Process a query and return the response, contexts, and metrics (non-streaming)"""
-        start_time = time.time()
+    def retrieve_context(self, query: str) -> List[str]:
+        """
+        Retrieve relevant contexts for a given query.
         
-        # Get context
-        retrieved_texts = self.retrieve_context(query)
-        
-        # Combine retrieved documents
-        context_str = "\n\n".join(retrieved_texts)
-        
-        # Generate response
-        response_text, usage_info = self.llm.generate(query, context_str, evaluation_mode=self.evaluation_mode)
-        self.last_llm_usage = usage_info
-        
+        Args:
+            query: The query to retrieve contexts for
+            
+        Returns:
+            List[str]: Retrieved context texts
+            
+        Raises:
+            RAGPipelineExecutionError: If retrieval fails
+        """
+        try:
+            # Get query embedding
+            query_embedding = self.embedding_model.embed_query(query)
+            
+            # Retrieve documents - check if vector store supports hybrid search
+            if hasattr(self.vector_store, 'search') and 'query' in self.vector_store.search.__code__.co_varnames:
+                retrieved_docs = self.vector_store.search(query_embedding, self.top_k, query=query)
+            else:
+                retrieved_docs = self.vector_store.search(query_embedding, self.top_k)
+                
+            retrieved_texts = [doc[0] for doc in retrieved_docs]
+            
+            # Apply reranking if available
+            if self.reranker and retrieved_texts:
+                reranked_docs = self.reranker.rerank(query, retrieved_texts)
+                # Select top 5 chunks after reranking
+                reranked_docs = reranked_docs[:5]
+                retrieved_texts = [doc[0] for doc in reranked_docs]
+            
+            return retrieved_texts
+        except Exception as e:
+            raise RAGPipelineExecutionError(f"Failed to retrieve context: {str(e)}")
+    
+    def _calculate_metrics(self, start_time: float, usage_info: Dict[str, Any]) -> PipelineMetrics:
+        """Calculate pipeline metrics from execution data"""
         total_time = time.time() - start_time
         
-        prompt_tokens = 0
-        completion_tokens = 0
-        total_tokens = 0
+        prompt_tokens = usage_info.get('prompt_tokens', 0)
+        completion_tokens = usage_info.get('completion_tokens', 0)
+        total_tokens = usage_info.get('total_tokens', 0)
         
-        if usage_info:
-            prompt_tokens = usage_info.get('prompt_tokens', 0)
-            completion_tokens = usage_info.get('completion_tokens', 0)
-            total_tokens = usage_info.get('total_tokens', 0)
-        else: # Fallback if usage_info is None, though unlikely with new changes
-            logging.warning("LLM usage_info was None in RAGPipeline.run. Token counts may be estimated.")
-            # Fallback to TokenCounter if usage_info is not available
-            try:
-                token_counter = TokenCounter(model_name=self.llm.get_model_name())
-                prompt_tokens = token_counter.count_tokens(query + context_str)
-                completion_tokens = token_counter.count_tokens(response_text)
-                total_tokens = prompt_tokens + completion_tokens
-            except Exception as e:
-                logging.error(f"TokenCounter fallback failed in RAGPipeline.run: {e}")
         model_name = self.llm.get_model_name()
         calculated_cost = TokenCostManager.calculate_cost(model_name, prompt_tokens, completion_tokens)
         
-        self.last_metrics = {
-            "total_time": total_time,
-            "input_tokens": prompt_tokens,
-            "output_tokens": completion_tokens,
-            "total_tokens": total_tokens,
-            "llm_cost": calculated_cost if calculated_cost is not None else 0.0
-        }
-        
-        return response_text, retrieved_texts, self.last_metrics
+        return PipelineMetrics(
+            total_time=total_time,
+            input_tokens=prompt_tokens,
+            output_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            llm_cost=calculated_cost if calculated_cost is not None else 0.0
+        )
     
-    def stream_run(self, query: str):
-        """Process a query and stream the response
-        
-        In evaluation mode, this will use non-streaming to maintain consistency
+    def run(self, query: str) -> Tuple[str, List[str], Dict[str, Any]]:
         """
-        # If we're in evaluation mode, use the non-streaming method instead
-        if self.evaluation_mode:
-            response_text, _, _ = self.run(query) # Discard contexts and metrics for streaming yield
-            yield response_text
-            return
+        Process a query and return the response, contexts, and metrics (non-streaming).
+        
+        Args:
+            query: The query to process
             
-        # Get context
-        retrieved_texts = self.retrieve_context(query)
-        
-        # Combine retrieved documents
-        context = "\n\n".join(retrieved_texts)
-        
-        # Stream response
-        for chunk in self.llm.stream_generate(query, context, evaluation_mode=self.evaluation_mode):
-            # Ensure we're not returning None values from our generator
-            if chunk is not None:
-                yield chunk
-            else:
-                logging.warning("LLM returned None chunk, skipping")
-                
-    def process_query(self, query: str) -> Tuple[str, List[str], Dict[str, Any]]:
-        """Process a query and return the response, retrieved contexts, and metrics"""
+        Returns:
+            Tuple[str, List[str], Dict[str, Any]]: Response text, contexts, and metrics
+            
+        Raises:
+            RAGPipelineExecutionError: If execution fails
+        """
         try:
             start_time = time.time()
             
-            # Get contexts from vector store
-            contexts = self.retrieve_context(query)
+            # Get context
+            retrieved_texts = self.retrieve_context(query)
+            
+            # Combine retrieved documents
+            context_str = "\n\n".join(retrieved_texts)
             
             # Generate response
-            response_text, usage_info = self.llm.generate(query, context="\n".join(contexts), evaluation_mode=self.evaluation_mode)
-            self.last_llm_usage = usage_info
+            response_text, usage_info = self.llm.generate(query, context_str, evaluation_mode=self.evaluation_mode)
             
-            # Calculate total time
-            total_time = time.time() - start_time
+            # Calculate metrics
+            self._metrics = self._calculate_metrics(start_time, usage_info)
             
-            prompt_tokens = 0
-            completion_tokens = 0
-            total_tokens = 0
-            
-            if usage_info:
-                prompt_tokens = usage_info.get('prompt_tokens', 0)
-                completion_tokens = usage_info.get('completion_tokens', 0)
-                total_tokens = usage_info.get('total_tokens', 0)
-            else: # Fallback if usage_info is None, though unlikely with new changes
-                logging.warning("LLM usage_info was None in process_query. Token counts will be zero.")
-                token_counter = TokenCounter(model_name=self.llm.get_model_name())
-                prompt_tokens = token_counter.count_tokens(query + "\n".join(contexts))
-                completion_tokens = token_counter.count_tokens(response_text)
-                total_tokens = prompt_tokens + completion_tokens
-            
-            model_name = self.llm.get_model_name()
-            calculated_cost = TokenCostManager.calculate_cost(model_name, prompt_tokens, completion_tokens)
-            
-            # Store metrics
-            self.last_metrics = {
-                "total_time": total_time,
-                "input_tokens": prompt_tokens,
-                "output_tokens": completion_tokens,
-                "total_tokens": total_tokens,
-                "llm_cost": calculated_cost if calculated_cost is not None else 0.0
-            }
-            
-            return response_text, contexts, self.last_metrics
-            
+            return response_text, retrieved_texts, self._metrics.to_dict()
         except Exception as e:
-            logging.error(f"Error processing query: {e}")
-            raise
-
+            raise RAGPipelineExecutionError(f"Failed to run pipeline: {str(e)}")
+    
+    def stream_run(self, query: str):
+        """
+        Process a query and stream the response.
+        
+        Args:
+            query: The query to process
+            
+        Yields:
+            str: Response chunks
+            
+        Raises:
+            RAGPipelineExecutionError: If execution fails
+        """
+        try:
+            # If we're in evaluation mode, use the non-streaming method instead
+            if self.evaluation_mode:
+                response_text, _, _ = self.run(query)
+                yield response_text
+                return
+                
+            # Get context
+            retrieved_texts = self.retrieve_context(query)
+            
+            # Combine retrieved documents
+            context = "\n\n".join(retrieved_texts)
+            
+            # Stream response
+            for chunk in self.llm.stream_generate(query, context, evaluation_mode=self.evaluation_mode):
+                if chunk is not None:
+                    yield chunk
+                else:
+                    logging.warning("LLM returned None chunk, skipping")
+        except Exception as e:
+            raise RAGPipelineExecutionError(f"Failed to stream response: {str(e)}")
+    
     def evaluate_response(self, query: str, response: str, contexts: List[str], ground_truth: str) -> Dict[str, float]:
-        """Evaluate the response using RAGAS metrics"""
+        """
+        Evaluate the response using RAGAS metrics.
+        
+        Args:
+            query: The original query
+            response: The generated response
+            contexts: The retrieved contexts
+            ground_truth: The expected answer
+            
+        Returns:
+            Dict[str, float]: Evaluation scores
+            
+        Raises:
+            RAGPipelineEvaluationError: If evaluation fails
+        """
         try:
             from evaluator import EvaluatorFactory
             from enums import EvaluationBackendType, EvaluationMetricType
@@ -692,25 +750,21 @@ class RAGPipeline:
                 EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.RAGAS_V2)
             )
             
-            cost_to_pass = self.last_metrics.get("llm_cost")
-            
             scores = evaluator.evaluate(
                 query=query,
                 response=response,
                 contexts=contexts,
                 ground_truth=ground_truth,
-                cost=cost_to_pass
+                cost=self._metrics.llm_cost
             )
             
-            # Add performance metrics to scores
-            if self.last_metrics:
-                scores.update(self.last_metrics)
+            # Update metrics with evaluation scores
+            self._metrics.evaluation_scores = scores
             
-            # Store the scores
-            self.last_evaluation_scores = scores
-            
-            return scores
+            return self._metrics.to_dict()
         except Exception as e:
-            logging.error(f"Error evaluating response: {e}")
-            self.last_evaluation_scores = None
-            raise
+            raise RAGPipelineEvaluationError(f"Failed to evaluate response: {str(e)}")
+    
+    def get_metrics(self) -> PipelineMetrics:
+        """Get the current pipeline metrics"""
+        return self._metrics
