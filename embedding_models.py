@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 import os
+import utils # Added
 import time
 import random
 import logging
@@ -38,7 +39,7 @@ class OpenAIEmbedding(EmbeddingModel):
         """Initialize the OpenAI embedding model"""
         from langchain_openai import OpenAIEmbeddings
         
-        if not os.environ.get("OPENAI_API_KEY"):
+        if not utils.get_openai_api_key():
             raise ValueError("OpenAI API key not found in environment variables")
         
         self._model = OpenAIEmbeddings(model="text-embedding-3-small")
@@ -63,7 +64,7 @@ class CohereEmbedding(EmbeddingModel):
         """Initialize the Cohere embedding model"""
         from langchain_cohere import CohereEmbeddings
         
-        if not os.environ.get("COHERE_API_KEY"):
+        if not utils.get_cohere_api_key():
             raise ValueError("Cohere API key not found in environment variables")
         
         self._model = CohereEmbeddings(model="embed-english-v3.0")
@@ -89,7 +90,7 @@ class GeminiEmbedding(EmbeddingModel):
         import google.generativeai as genai
         from langchain_google_genai import GoogleGenerativeAIEmbeddings
         
-        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key = utils.get_gemini_api_key()
         if not api_key:
             raise ValueError("Gemini API key not found in environment variables")
         
@@ -97,7 +98,7 @@ class GeminiEmbedding(EmbeddingModel):
         genai.configure(api_key=api_key)
         
         # Initialize the embeddings with the model name
-        self._model = GoogleGenerativeAIEmbeddings(
+        self._model = GoogleGenerativeAIEmbeddings( # TODO: This model name should be a config
             model="models/gemini-embedding-exp-03-07",
             google_api_key=api_key
         )
@@ -118,10 +119,10 @@ class GeminiEmbedding(EmbeddingModel):
 class MistralEmbedding(EmbeddingModel):
     """Mistral embedding model implementation with batching and rate limiting"""
     
-    def __init__(self, model_name="mistral-embed", batch_size=20, 
+    def __init__(self, model_name="mistral-embed", batch_size=20, # TODO: model_name should be a config
                  initial_delay=1, max_retries=5, max_delay=60):
         """Initialize the Mistral embedding model"""
-        api_key = os.environ.get("MISTRAL_API_KEY")
+        api_key = utils.get_mistral_api_key()
         if not api_key:
             raise ValueError("Mistral API key not found in environment variables")
         
@@ -318,10 +319,10 @@ class BGEEmbedding(EmbeddingModel):
 class VoyageEmbedding(EmbeddingModel):
     """Voyage AI embedding model implementation with batching and rate limiting"""
     
-    def __init__(self, model_name="voyage-3", batch_size=10, 
+    def __init__(self, model_name="voyage-3", batch_size=10, # TODO: model_name should be a config
                  initial_delay=1, max_retries=5, max_delay=60):
         """Initialize the Voyage AI embedding model"""
-        api_key = os.environ.get("VOYAGE_API_KEY")
+        api_key = utils.get_voyage_api_key()
         if not api_key:
             raise ValueError("Voyage API key not found in environment variables")
         

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Tuple, Optional
 import os
+import utils # Added
 import logging
 from enums import RerankerModelType
 import requests
@@ -27,10 +28,11 @@ class VoyageReranker(Reranker):
         """
         import voyageai
 
-        if not os.environ.get("VOYAGE_API_KEY"):
+        api_key = utils.get_voyage_api_key()
+        if not api_key:
             raise ValueError("Voyage API key not found in environment variables")
 
-        self._client = voyageai.Client(api_key=os.environ.get("VOYAGE_API_KEY"))
+        self._client = voyageai.Client(api_key=api_key)
         self._model_name = model_name
 
     def rerank(self, query: str, documents: List[str]) -> List[Tuple[str, float]]:
@@ -73,10 +75,11 @@ class CohereRerankerV2(Reranker):
         """Initialize the Cohere V2 reranker"""
         import cohere
 
-        if not os.environ.get("COHERE_API_KEY"):
+        api_key = utils.get_cohere_api_key()
+        if not api_key:
             raise ValueError("Cohere API key not found in environment variables")
 
-        self._client = cohere.Client(os.environ.get("COHERE_API_KEY"))
+        self._client = cohere.Client(api_key)
 
     def rerank(self, query: str, documents: List[str]) -> List[Tuple[str, float]]:
         """Rerank documents based on relevance to the query using Cohere V2 model"""
@@ -112,10 +115,11 @@ class CohereRerankerV3(Reranker):
         """Initialize the Cohere V3 reranker"""
         import cohere
 
-        if not os.environ.get("COHERE_API_KEY"):
+        api_key = utils.get_cohere_api_key()
+        if not api_key:
             raise ValueError("Cohere API key not found in environment variables")
 
-        self._client = cohere.Client(os.environ.get("COHERE_API_KEY"))
+        self._client = cohere.Client(api_key)
 
     def rerank(self, query: str, documents: List[str]) -> List[Tuple[str, float]]:
         """Rerank documents based on relevance to the query using Cohere V3 model"""
@@ -151,10 +155,11 @@ class CohereRerankerMultilingual(Reranker):
         """Initialize the Cohere multilingual reranker"""
         import cohere
 
-        if not os.environ.get("COHERE_API_KEY"):
+        api_key = utils.get_cohere_api_key()
+        if not api_key:
             raise ValueError("Cohere API key not found in environment variables")
 
-        self._client = cohere.Client(os.environ.get("COHERE_API_KEY"))
+        self._client = cohere.Client(api_key)
 
     def rerank(self, query: str, documents: List[str]) -> List[Tuple[str, float]]:
         """Rerank documents based on relevance to the query using Cohere multilingual model"""
@@ -192,12 +197,13 @@ class JinaReranker(Reranker):
         Args:
             model_name: The model name to use (default: jina-rerank-v1)
         """
-        if not os.environ.get("JINA_API_KEY"):
-            raise ValueError("Jina API key not found in environment variables")
+        api_key = utils.get_jina_api_key()
+        if not api_key:
+            raise ValueError("Jina API key not found in environment variables. Ensure JINA_API_KEY is set.")
             
-        self._api_key = os.environ.get("JINA_API_KEY")
+        self._api_key = api_key
         self._model_name = model_name
-        self._api_url = "https://api.jina.ai/v1/rerank"
+        self._api_url = "https://api.jina.ai/v1/rerank" # TODO: This URL could also be a config
         
     def rerank(self, query: str, documents: List[str]) -> List[Tuple[str, float]]:
         """Rerank documents based on relevance to the query using Jina AI model"""

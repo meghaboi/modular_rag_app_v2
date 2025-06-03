@@ -88,37 +88,37 @@ def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_e
     # Check and record status
     if openai_needed:
         key_name = "OpenAI API Key"
-        is_available = bool(os.getenv("OPENAI_API_KEY"))
+        is_available = bool(get_openai_api_key())
         api_keys_status[key_name] = "Available" if is_available else "Missing"
         if not is_available: missing_keys_list.append(key_name)
 
     if cohere_needed:
         key_name = "Cohere API Key"
-        is_available = bool(os.getenv("COHERE_API_KEY"))
+        is_available = bool(get_cohere_api_key())
         api_keys_status[key_name] = "Available" if is_available else "Missing"
         if not is_available: missing_keys_list.append(key_name)
 
     if gemini_needed:
         key_name = "Gemini API Key"
-        is_available = bool(os.getenv("GEMINI_API_KEY"))
+        is_available = bool(get_gemini_api_key())
         api_keys_status[key_name] = "Available" if is_available else "Missing"
         if not is_available: missing_keys_list.append(key_name)
 
     if anthropic_needed:
         key_name = "Anthropic API Key"
-        is_available = bool(os.getenv("ANTHROPIC_API_KEY"))
+        is_available = bool(get_anthropic_api_key())
         api_keys_status[key_name] = "Available" if is_available else "Missing"
         if not is_available: missing_keys_list.append(key_name)
 
     if mistral_needed:
         key_name = "Mistral API Key"
-        is_available = bool(os.getenv("MISTRAL_API_KEY"))
+        is_available = bool(get_mistral_api_key())
         api_keys_status[key_name] = "Available" if is_available else "Missing"
         if not is_available: missing_keys_list.append(key_name)
 
     if voyage_needed:
         key_name = "Voyage AI API Key"
-        is_available = bool(os.getenv("VOYAGE_API_KEY"))
+        is_available = bool(get_voyage_api_key())
         api_keys_status[key_name] = "Available" if is_available else "Missing"
         if not is_available: missing_keys_list.append(key_name)
 
@@ -138,11 +138,12 @@ def text_to_speech(text: str) -> Optional[bytes]:
         logging.warning("TTS skipped: Text is empty after cleaning.")
         return None
 
-    if not os.getenv("OPENAI_API_KEY"):
+    if not get_openai_api_key():
         logging.error("OpenAI API Key not found. Cannot generate audio.")
         return None
 
     try:
+        # OpenAI client uses OPENAI_API_KEY env var by default if not passed explicitly
         client = OpenAI(timeout=httpx.Timeout(45.0, connect=10.0)) 
         selected_voice = "fable"
         selected_model = "tts-1"
@@ -250,10 +251,11 @@ def determine_prompt_nature(query: str) -> str:
     CONFIDENCE_THRESHOLD = 0.7
 
     try:
-        if not os.getenv("ANTHROPIC_API_KEY"):
+        if not get_anthropic_api_key(): # Check if key exists
             logging.error("ANTHROPIC_API_KEY not found. Cannot determine prompt nature.")
             return DEFAULT_NATURE
 
+        # Anthropic client uses ANTHROPIC_API_KEY env var by default if not passed explicitly
         client = Anthropic()
 
         classify_tool = {
@@ -318,3 +320,37 @@ def determine_prompt_nature(query: str) -> str:
     except Exception as e:
         logging.error(f"Error determining prompt nature for query '{query}': {e}", exc_info=True)
         return DEFAULT_NATURE
+
+# API Key Getters
+
+def get_openai_api_key() -> str | None:
+    """Returns the OpenAI API key from environment variables."""
+    return os.getenv("OPENAI_API_KEY")
+
+def get_cohere_api_key() -> str | None:
+    """Returns the Cohere API key from environment variables."""
+    return os.getenv("COHERE_API_KEY")
+
+def get_gemini_api_key() -> str | None:
+    """Returns the Gemini API key from environment variables."""
+    return os.getenv("GEMINI_API_KEY")
+
+def get_anthropic_api_key() -> str | None:
+    """Returns the Anthropic API key from environment variables."""
+    return os.getenv("ANTHROPIC_API_KEY")
+
+def get_mistral_api_key() -> str | None:
+    """Returns the Mistral API key from environment variables."""
+    return os.getenv("MISTRAL_API_KEY")
+
+def get_voyage_api_key() -> str | None:
+    """Returns the Voyage API key from environment variables."""
+    return os.getenv("VOYAGE_API_KEY")
+
+def get_langchain_api_key() -> str | None:
+    """Returns the Langchain API key (for LangSmith) from environment variables."""
+    return os.getenv("LANGCHAIN_API_KEY")
+
+def get_jina_api_key() -> str | None:
+    """Returns the Jina API key from environment variables."""
+    return os.getenv("JINA_API_KEY")

@@ -2,13 +2,9 @@ import streamlit as st
 import logging
 from ui_components import display_chat_interface, display_evaluation_interface
 from sidebar import display_settings_panel
-from utils import check_api_keys
+# Removed: from utils import check_api_keys # No longer directly used here, handled by individual components
 from pipeline_utils import initialize_pipeline
-from subject_configs import (
-    DEFAULT_EMBEDDING_MODEL, DEFAULT_VECTOR_STORE, DEFAULT_RERANKER_MODEL,
-    DEFAULT_LLM_MODEL, DEFAULT_CHUNKING_STRATEGY, DEFAULT_HYBRID_ALPHA,
-    DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP, DEFAULT_TOP_K
-)
+import subject_configs # Changed import to use the module directly
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -42,23 +38,23 @@ if 'api_key_status' not in st.session_state:
 
 # Set default configuration values
 if 'embedding_model' not in st.session_state:
-    st.session_state.embedding_model = DEFAULT_EMBEDDING_MODEL.value
+    st.session_state.embedding_model = subject_configs.DEFAULT_EMBEDDING_MODEL.value
 if 'vector_store' not in st.session_state:
-    st.session_state.vector_store = DEFAULT_VECTOR_STORE.value
+    st.session_state.vector_store = subject_configs.DEFAULT_VECTOR_STORE.value
 if 'reranker' not in st.session_state:
-    st.session_state.reranker = DEFAULT_RERANKER_MODEL.value
+    st.session_state.reranker = subject_configs.DEFAULT_RERANKER_MODEL.value
 if 'llm_model' not in st.session_state:
-    st.session_state.llm_model = DEFAULT_LLM_MODEL.value
+    st.session_state.llm_model = subject_configs.DEFAULT_LLM_MODEL.value
 if 'chunking_strategy' not in st.session_state:
-    st.session_state.chunking_strategy = DEFAULT_CHUNKING_STRATEGY.value
+    st.session_state.chunking_strategy = subject_configs.DEFAULT_CHUNKING_STRATEGY.value
 if 'hybrid_alpha' not in st.session_state:
-    st.session_state.hybrid_alpha = DEFAULT_HYBRID_ALPHA
+    st.session_state.hybrid_alpha = subject_configs.DEFAULT_HYBRID_ALPHA
 if 'chunk_size' not in st.session_state:
-    st.session_state.chunk_size = DEFAULT_CHUNK_SIZE
+    st.session_state.chunk_size = subject_configs.DEFAULT_CHUNK_SIZE
 if 'chunk_overlap' not in st.session_state:
-    st.session_state.chunk_overlap = DEFAULT_CHUNK_OVERLAP
+    st.session_state.chunk_overlap = subject_configs.DEFAULT_CHUNK_OVERLAP
 if 'top_k' not in st.session_state:
-    st.session_state.top_k = DEFAULT_TOP_K
+    st.session_state.top_k = subject_configs.DEFAULT_TOP_K
 
 def main():
     # Display settings panel in sidebar

@@ -13,111 +13,164 @@ import numpy as np
 from token_utils import TokenCounter, TokenCostManager
 import logging
 import time
+from evaluator import BaseEvaluator # Added import
+from chunking_strategies import ChunkingStrategy # Import from new file
 
-class HybridSearch:
-    """Combines dense vector search with sparse keyword search (BM25)"""
+# HybridSearch class moved to vector_stores.py
+# ChunkingStrategy and related classes (ParagraphChunking, etc.) and ChunkingStrategyFactory moved to chunking_strategies.py
+
+class RAGPipeline:
+    """RAG Pipeline that combines all components with streaming support"""
+    # This class itself does not need to be here if it's just a container for Indexer, Retriever, etc.
+    # However, it's kept for now as per the current structure.
     
-    def __init__(self, alpha: float = 0.5):
+class Indexer:
+    """Handles document indexing including chunking, embedding, and storage."""
+
+    def __init__(self, chunking_strategy: ChunkingStrategy,
+                 embedding_model: EmbeddingModel,
+                 vector_store: VectorStore):
         """
-        Initialize hybrid search
-        
+        Initialize the Indexer.
+
         Args:
-            alpha: Weight for vector search scores (1-alpha = weight for BM25)
+            chunking_strategy: The strategy to use for chunking text.
+            embedding_model: The model to use for creating embeddings.
+            vector_store: The store to save document chunks and embeddings.
         """
-        self.alpha = alpha
-        self.documents = []
-        self.bm25 = None
-        self.doc_embeddings = None
-        
-    def index_documents(self, documents: List[str], embeddings: List[List[float]]) -> None:
-        """Index documents for both vector search and BM25"""
-        self.documents = documents
-        self.doc_embeddings = np.array(embeddings)
-        
-        # Tokenize documents for BM25
-        tokenized_docs = [self._tokenize(doc) for doc in documents]
-        self.bm25 = BM25Okapi(tokenized_docs)
-    
-    def _tokenize(self, text: str) -> List[str]:
-        """Simple tokenization for BM25"""
-        # Convert to lowercase and split on non-alphanumeric
-        text = text.lower()
-        tokens = re.findall(r'\w+', text)
-        return tokens
-    
-    def search(self, query: str, query_embedding: List[float], top_k: int = 5) -> List[Tuple[str, float]]:
+        # Type check is good, ensures the passed object is of the expected abstract type
+        if not isinstance(chunking_strategy, ChunkingStrategy):
+            raise TypeError("chunking_strategy must be an instance of ChunkingStrategy from chunking_strategies.py")
+
+        self.chunking_strategy = chunking_strategy
+        self.embedding_model = embedding_model
+        self.vector_store = vector_store
+        self.documents_indexed = [] # Keep track of indexed document chunks
+
+    def index_documents(self, file_path: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> None:
         """
-        Perform hybrid search using both vector similarity and BM25
-        
+        Index documents from a file.
+
         Args:
-            query: Text query for keyword search
-            query_embedding: Vector embedding of the query
-            top_k: Number of results to return
-            
+            file_path: Path to the document file.
+            chunk_size: Maximum number of tokens per chunk.
+            chunk_overlap: Number of tokens to overlap between chunks.
+        """
+        # Read file
+        with open(file_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        
+        # Split text into chunks using the selected strategy
+        logging.info(f"Starting chunking with strategy: {self.chunking_strategy.name}, size: {chunk_size}, overlap: {chunk_overlap}")
+        chunks = self.chunking_strategy.chunk_text(text, chunk_size, chunk_overlap)
+        self.documents_indexed = chunks # Store the actual text chunks
+        logging.info(f"Created {len(chunks)} chunks.")
+        
+        # Get embeddings for chunks
+        logging.info("Starting embedding of document chunks...")
+        embeddings = self.embedding_model.embed_documents(chunks)
+        logging.info(f"Created {len(embeddings)} embeddings.")
+        
+        # Add chunks to vector store
+        logging.info("Adding documents and embeddings to vector store...")
+        self.vector_store.add_documents(chunks, embeddings)
+        logging.info("Document indexing complete.")
+
+class Retriever:
+    """Handles context retrieval including query embedding, vector search, and reranking."""
+
+    def __init__(self, embedding_model: EmbeddingModel,
+                 vector_store: VectorStore,
+                 top_k: int,
+                 reranker: Optional[Reranker] = None):
+        """
+        Initialize the Retriever.
+
+        Args:
+            embedding_model: The model to use for creating query embeddings.
+            vector_store: The store to search for relevant document chunks.
+            top_k: The number of top documents to retrieve from the vector store.
+            reranker: Optional reranker to re-score and sort documents.
+        """
+        self.embedding_model = embedding_model
+        self.vector_store = vector_store
+        self.reranker = reranker
+        self.top_k = top_k
+
+    def retrieve_context(self, query: str) -> List[str]:
+        """
+        Retrieve relevant contexts for a given query.
+
+        Args:
+            query: The user's query string.
+
         Returns:
-            List of tuples with (document, score)
+            A list of context strings.
         """
-        if not self.documents or len(self.documents) == 0:
-            return []
+        logging.info(f"Retrieving context for query: '{query}' with top_k={self.top_k}")
+        # Get query embedding
+        query_embedding = self.embedding_model.embed_query(query)
         
-        # Vector search scores
-        vector_scores = self._vector_search(query_embedding)
+        # Retrieve documents - check if vector store supports hybrid search
+        if hasattr(self.vector_store, 'search') and 'query' in self.vector_store.search.__code__.co_varnames:
+            # Vector store supports hybrid search
+            retrieved_docs_with_scores = self.vector_store.search(query_embedding, self.top_k, query=query)
+        else:
+            # Standard vector search
+            retrieved_docs_with_scores = self.vector_store.search(query_embedding, self.top_k)
         
-        # BM25 search scores
-        bm25_scores = self._bm25_search(query)
+        retrieved_texts = [doc_tuple[0] for doc_tuple in retrieved_docs_with_scores]
+        logging.info(f"Retrieved {len(retrieved_texts)} documents from vector store.")
         
-        # Normalize scores to [0, 1] range
-        vector_scores_norm = self._normalize_scores(vector_scores)
-        bm25_scores_norm = self._normalize_scores(bm25_scores)
-        
-        # Combine scores with alpha weighting
-        combined_scores = self.alpha * vector_scores_norm + (1 - self.alpha) * bm25_scores_norm
-        
-        # Get top k results
-        top_indices = np.argsort(-combined_scores)[:top_k]
-        
-        results = [(self.documents[i], combined_scores[i]) for i in top_indices]
-        return results
-    
-    def _vector_search(self, query_embedding: List[float]) -> np.ndarray:
-        """Calculate vector similarity scores for all documents"""
-        query_embedding = np.array(query_embedding)
-        
-        # Calculate cosine similarity
-        # Normalize vectors for cosine similarity
-        query_norm = np.linalg.norm(query_embedding)
-        if query_norm > 0:
-            query_embedding = query_embedding / query_norm
-            
-        # Calculate dot product for normalized vectors (equal to cosine similarity)
-        doc_norms = np.linalg.norm(self.doc_embeddings, axis=1, keepdims=True)
-        normalized_embeddings = np.divide(self.doc_embeddings, doc_norms, 
-                                         where=doc_norms != 0)
-        
-        similarities = np.dot(normalized_embeddings, query_embedding)
-        return similarities
-    
-    def _bm25_search(self, query: str) -> np.ndarray:
-        """Calculate BM25 scores for all documents"""
-        query_tokens = self._tokenize(query)
-        scores = np.array(self.bm25.get_scores(query_tokens))
-        return scores
-    
-    def _normalize_scores(self, scores: np.ndarray) -> np.ndarray:
-        """Normalize scores to [0, 1] range"""
-        min_score = np.min(scores)
-        max_score = np.max(scores)
-        
-        if max_score == min_score:
-            return np.ones_like(scores)
-            
-        normalized = (scores - min_score) / (max_score - min_score)
-        return normalized
+        # Apply reranking if available
+        if self.reranker and retrieved_texts:
+            logging.info(f"Reranking {len(retrieved_texts)} documents.")
+            reranked_docs_with_scores = self.reranker.rerank(query, retrieved_texts)
+            # Consistent with previous logic, reranker might return more, but we take top N (e.g. 5 or self.top_k)
+            # Let's make this configurable or stick to a constant like 5 for now after reranking.
+            # For this refactor, sticking to previous `min(5, ...)`
+            top_n_reranked = reranked_docs_with_scores[:min(5, len(reranked_docs_with_scores))]
+            retrieved_texts = [doc_tuple[0] for doc_tuple in top_n_reranked]
+            logging.info(f"Number of documents after reranking: {len(retrieved_texts)}")
+        else:
+            logging.info(f"No reranker applied or no initial documents to rerank. Number of documents: {len(retrieved_texts)}")
 
-class ChunkingStrategy(ABC):
-    """Abstract class for text chunking strategies"""
+        return retrieved_texts
+
+class RAGPipeline:
+    """RAG Pipeline that combines all components with streaming support"""
+
+    def __init__(self,
+                 llm: StreamingLLM,
+                 indexer: Indexer,
+                 retriever: Retriever,
+                 evaluator: Optional[BaseEvaluator] = None, # Added evaluator
+                 evaluation_mode: bool = False):
+        """Initialize the RAG pipeline with the selected components"""
+        self.llm = llm
+        self.indexer = indexer
+        self.retriever = retriever
+        self.evaluator = evaluator # Store the evaluator instance
+        self.evaluation_mode = evaluation_mode
+        self.last_evaluation_scores = None
+        self.last_metrics = {}
+        self.last_llm_usage = None
+
+    def initialize(self, file_path: str, chunk_size: int, chunk_overlap: int) -> None:
+        """Initialize the pipeline by indexing documents via the Indexer."""
+        logging.info(f"RAGPipeline: Initializing and indexing file: {file_path}")
+        self.indexer.index_documents(file_path, chunk_size, chunk_overlap)
+
+    # retrieve_context method removed
     
-    def __init__(self):
+    def run(self, query: str) -> Tuple[str, List[str], Dict[str, Any]]:
+        """Process a query and return the response, contexts, and metrics (non-streaming)"""
+        start_time = time.time()
+
+        # Get context using the Retriever
+        retrieved_texts = self.retriever.retrieve_context(query)
+
+        # Combine retrieved documents
         self.token_counter = TokenCounter()
     
     @abstractmethod
@@ -497,75 +550,147 @@ class ChunkingStrategyFactory:
 class RAGPipeline:
     """RAG Pipeline that combines all components with streaming support"""
     
-    def __init__(self, embedding_model, vector_store, 
-                 llm, reranker=None, top_k=3,
-                 chunking_strategy=None, chunk_size=1000, 
-                 chunk_overlap=200, evaluation_mode=False):
-        """Initialize the RAG pipeline with the selected components"""
+class Indexer:
+    """Handles document indexing including chunking, embedding, and storage."""
+
+    def __init__(self, chunking_strategy: ChunkingStrategy,
+                 embedding_model: EmbeddingModel,
+                 vector_store: VectorStore):
+        """
+        Initialize the Indexer.
+
+        Args:
+            chunking_strategy: The strategy to use for chunking text.
+            embedding_model: The model to use for creating embeddings.
+            vector_store: The store to save document chunks and embeddings.
+        """
+        self.chunking_strategy = chunking_strategy
         self.embedding_model = embedding_model
         self.vector_store = vector_store
-        self.reranker = reranker
-        self.llm = llm
-        self.top_k = top_k
-        self.documents = []
-        self.chunking_strategy = chunking_strategy
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-        self.evaluation_mode = evaluation_mode
-        self.last_evaluation_scores = None  # Store the last evaluation scores
-        self.last_metrics = {}  # Store the last performance metrics
-        self.last_llm_usage = None # Store usage from the last LLM call
-    
-    def initialize(self, file_path: str) -> None:
-        """Initialize the pipeline with a document file"""
-        self.index_documents(file_path, self.chunk_size, self.chunk_overlap)
-    
+        self.documents_indexed = [] # Keep track of indexed document chunks
+
     def index_documents(self, file_path: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> None:
-        """Index documents from a file"""
+        """
+        Index documents from a file.
+
+        Args:
+            file_path: Path to the document file.
+            chunk_size: Maximum number of tokens per chunk.
+            chunk_overlap: Number of tokens to overlap between chunks.
+        """
         # Read file
         with open(file_path, 'r', encoding='utf-8') as f:
             text = f.read()
         
         # Split text into chunks using the selected strategy
+        logging.info(f"Starting chunking with strategy: {self.chunking_strategy.name}, size: {chunk_size}, overlap: {chunk_overlap}")
         chunks = self.chunking_strategy.chunk_text(text, chunk_size, chunk_overlap)
-        self.documents = chunks
+        self.documents_indexed = chunks # Store the actual text chunks
+        logging.info(f"Created {len(chunks)} chunks.")
         
         # Get embeddings for chunks
+        logging.info("Starting embedding of document chunks...")
         embeddings = self.embedding_model.embed_documents(chunks)
+        logging.info(f"Created {len(embeddings)} embeddings.")
         
         # Add chunks to vector store
+        logging.info("Adding documents and embeddings to vector store...")
         self.vector_store.add_documents(chunks, embeddings)
-    
-    def retrieve_context(self, query: str) -> list:
-        """Retrieve relevant contexts for a given query"""
+        logging.info("Document indexing complete.")
+
+class Retriever:
+    """Handles context retrieval including query embedding, vector search, and reranking."""
+
+    def __init__(self, embedding_model: EmbeddingModel,
+                 vector_store: VectorStore,
+                 top_k: int,
+                 reranker: Optional[Reranker] = None):
+        """
+        Initialize the Retriever.
+
+        Args:
+            embedding_model: The model to use for creating query embeddings.
+            vector_store: The store to search for relevant document chunks.
+            top_k: The number of top documents to retrieve from the vector store.
+            reranker: Optional reranker to re-score and sort documents.
+        """
+        self.embedding_model = embedding_model
+        self.vector_store = vector_store
+        self.reranker = reranker
+        self.top_k = top_k
+
+    def retrieve_context(self, query: str) -> List[str]:
+        """
+        Retrieve relevant contexts for a given query.
+
+        Args:
+            query: The user's query string.
+
+        Returns:
+            A list of context strings.
+        """
+        logging.info(f"Retrieving context for query: '{query}' with top_k={self.top_k}")
         # Get query embedding
         query_embedding = self.embedding_model.embed_query(query)
         
         # Retrieve documents - check if vector store supports hybrid search
         if hasattr(self.vector_store, 'search') and 'query' in self.vector_store.search.__code__.co_varnames:
             # Vector store supports hybrid search
-            retrieved_docs = self.vector_store.search(query_embedding, self.top_k, query=query)
+            retrieved_docs_with_scores = self.vector_store.search(query_embedding, self.top_k, query=query)
         else:
             # Standard vector search
-            retrieved_docs = self.vector_store.search(query_embedding, self.top_k)
-            
-        retrieved_texts = [doc[0] for doc in retrieved_docs]
+            retrieved_docs_with_scores = self.vector_store.search(query_embedding, self.top_k)
+
+        retrieved_texts = [doc_tuple[0] for doc_tuple in retrieved_docs_with_scores]
+        logging.info(f"Retrieved {len(retrieved_texts)} documents from vector store.")
         
         # Apply reranking if available
         if self.reranker and retrieved_texts:
-            reranked_docs = self.reranker.rerank(query, retrieved_texts)
-            # Select top 5 chunks after reranking
-            reranked_docs = reranked_docs[:5]
-            retrieved_texts = [doc[0] for doc in reranked_docs]
-        
+            logging.info(f"Reranking {len(retrieved_texts)} documents.")
+            reranked_docs_with_scores = self.reranker.rerank(query, retrieved_texts)
+            # Consistent with previous logic, reranker might return more, but we take top N (e.g. 5 or self.top_k)
+            # Let's make this configurable or stick to a constant like 5 for now after reranking.
+            # For this refactor, sticking to previous `min(5, ...)`
+            top_n_reranked = reranked_docs_with_scores[:min(5, len(reranked_docs_with_scores))]
+            retrieved_texts = [doc_tuple[0] for doc_tuple in top_n_reranked]
+            logging.info(f"Number of documents after reranking: {len(retrieved_texts)}")
+        else:
+            logging.info(f"No reranker applied or no initial documents to rerank. Number of documents: {len(retrieved_texts)}")
+
         return retrieved_texts
+
+class RAGPipeline:
+    """RAG Pipeline that combines all components with streaming support"""
+
+    def __init__(self,
+                 llm: StreamingLLM,
+                 indexer: Indexer,
+                 retriever: Retriever,
+                 evaluator: Optional[BaseEvaluator] = None, # Added evaluator
+                 evaluation_mode: bool = False):
+        """Initialize the RAG pipeline with the selected components"""
+        self.llm = llm
+        self.indexer = indexer
+        self.retriever = retriever
+        self.evaluator = evaluator # Store the evaluator instance
+        self.evaluation_mode = evaluation_mode
+        self.last_evaluation_scores = None
+        self.last_metrics = {}
+        self.last_llm_usage = None
+
+    def initialize(self, file_path: str, chunk_size: int, chunk_overlap: int) -> None:
+        """Initialize the pipeline by indexing documents via the Indexer."""
+        logging.info(f"RAGPipeline: Initializing and indexing file: {file_path}")
+        self.indexer.index_documents(file_path, chunk_size, chunk_overlap)
+
+    # retrieve_context method removed
     
     def run(self, query: str) -> Tuple[str, List[str], Dict[str, Any]]:
         """Process a query and return the response, contexts, and metrics (non-streaming)"""
         start_time = time.time()
         
-        # Get context
-        retrieved_texts = self.retrieve_context(query)
+        # Get context using the Retriever
+        retrieved_texts = self.retriever.retrieve_context(query)
         
         # Combine retrieved documents
         context_str = "\n\n".join(retrieved_texts)
@@ -632,69 +757,18 @@ class RAGPipeline:
             else:
                 logging.warning("LLM returned None chunk, skipping")
                 
-    def process_query(self, query: str) -> Tuple[str, List[str], Dict[str, Any]]:
-        """Process a query and return the response, retrieved contexts, and metrics"""
-        try:
-            start_time = time.time()
-            
-            # Get contexts from vector store
-            contexts = self.retrieve_context(query)
-            
-            # Generate response
-            response_text, usage_info = self.llm.generate(query, context="\n".join(contexts), evaluation_mode=self.evaluation_mode)
-            self.last_llm_usage = usage_info
-            
-            # Calculate total time
-            total_time = time.time() - start_time
-            
-            prompt_tokens = 0
-            completion_tokens = 0
-            total_tokens = 0
-            
-            if usage_info:
-                prompt_tokens = usage_info.get('prompt_tokens', 0)
-                completion_tokens = usage_info.get('completion_tokens', 0)
-                total_tokens = usage_info.get('total_tokens', 0)
-            else: # Fallback if usage_info is None, though unlikely with new changes
-                logging.warning("LLM usage_info was None in process_query. Token counts will be zero.")
-                token_counter = TokenCounter(model_name=self.llm.get_model_name())
-                prompt_tokens = token_counter.count_tokens(query + "\n".join(contexts))
-                completion_tokens = token_counter.count_tokens(response_text)
-                total_tokens = prompt_tokens + completion_tokens
-            
-            model_name = self.llm.get_model_name()
-            calculated_cost = TokenCostManager.calculate_cost(model_name, prompt_tokens, completion_tokens)
-            
-            # Store metrics
-            self.last_metrics = {
-                "total_time": total_time,
-                "input_tokens": prompt_tokens,
-                "output_tokens": completion_tokens,
-                "total_tokens": total_tokens,
-                "llm_cost": calculated_cost if calculated_cost is not None else 0.0
-            }
-            
-            return response_text, contexts, self.last_metrics
-            
-        except Exception as e:
-            logging.error(f"Error processing query: {e}")
-            raise
+    # process_query method removed as its functionality is covered by run()
 
     def evaluate_response(self, query: str, response: str, contexts: List[str], ground_truth: str) -> Dict[str, float]:
-        """Evaluate the response using RAGAS metrics"""
+        """Evaluate the response using the configured evaluator."""
+        if self.evaluator is None:
+            logging.warning("RAGPipeline.evaluate_response called but no evaluator is configured. Returning empty metrics.")
+            return {}
+
         try:
-            from evaluator import EvaluatorFactory
-            from enums import EvaluationBackendType, EvaluationMetricType
-            
-            # Use RAGAS_V2 for consistency with permutation evaluations
-            evaluator = EvaluatorFactory.create_evaluator(
-                EvaluationBackendType.RAGAS_V2, 
-                EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.RAGAS_V2)
-            )
-            
             cost_to_pass = self.last_metrics.get("llm_cost")
             
-            scores = evaluator.evaluate(
+            scores = self.evaluator.evaluate(
                 query=query,
                 response=response,
                 contexts=contexts,
@@ -702,15 +776,25 @@ class RAGPipeline:
                 cost=cost_to_pass
             )
             
-            # Add performance metrics to scores
+            # Add performance metrics to scores (which might include RAGAS scores + cost)
+            # self.last_metrics already contains total_time, token counts, and llm_cost
+            # The evaluator's scores might also contain a 'cost' if it was passed.
+            # We should ensure metrics are not duplicated or overwritten unintentionally.
+
+            # Let's assume evaluator.evaluate() returns the RAG-specific scores (like faithfulness)
+            # and we add the performance metrics to it.
+            # If cost was passed to evaluator, it might also be in 'scores'.
+            # We prioritize self.last_metrics for performance numbers.
+
+            final_scores = scores.copy() # Start with what the evaluator returned
             if self.last_metrics:
-                scores.update(self.last_metrics)
+                final_scores.update(self.last_metrics) # Add/overwrite with performance metrics
             
-            # Store the scores
-            self.last_evaluation_scores = scores
+            self.last_evaluation_scores = final_scores
+            return final_scores
             
-            return scores
         except Exception as e:
-            logging.error(f"Error evaluating response: {e}")
+            logging.error(f"Error evaluating response with configured evaluator: {e}", exc_info=True)
             self.last_evaluation_scores = None
-            raise
+            # Return performance metrics even if RAG evaluation failed, if available
+            return self.last_metrics if self.last_metrics else {}

@@ -125,7 +125,7 @@ class EvaluationBackendType(Enum):
     RAGAS = "RAGAS"
     LANGSMITH = "LangSmith"
     DEEP_EVAL = "DeepEval"
-    RAGAS_V2 = "RAGAS_V2"
+    # RAGAS_V2 = "RAGAS_V2" # Removed
     CUSTOM = "Custom"
 
     @classmethod
@@ -195,13 +195,13 @@ class EvaluationMetricType(Enum):
                 cls.ANSWER_CONSISTENCY.value,
                 cls.CONTEXT_COVERAGE.value
             ]
-        elif backend_type == EvaluationBackendType.RAGAS_V2:
-            return [
-                cls.FAITHFULNESS.value,
-                cls.CONTEXT_PRECISION.value,
-                cls.CONTEXT_RECALL.value,
-                cls.ANSWER_CORRECTNESS.value,
-            ]
+        # elif backend_type == EvaluationBackendType.RAGAS_V2: # Removed block
+        #     return [
+        #         cls.FAITHFULNESS.value,
+        #         cls.CONTEXT_PRECISION.value,
+        #         cls.CONTEXT_RECALL.value,
+        #         cls.ANSWER_CORRECTNESS.value,
+        #     ]
         elif backend_type == EvaluationBackendType.CUSTOM:
             return [
                 cls.CONTEXT_RECALL.value,

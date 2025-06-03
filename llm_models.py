@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Callable, Iterator, Tuple
 import os
+import utils # Added
 from openai import OpenAI 
 import google.generativeai as genai 
 from anthropic import Anthropic 
@@ -8,6 +9,17 @@ from mistralai.client import MistralClient
 from mistralai.models import UserMessage, SystemMessage
 
 from enums import LLMModelType
+from subject_configs import (
+    DEFAULT_SYSTEM_PROMPT,
+    DEFAULT_GPT35_MODEL,
+    DEFAULT_GPT4_MODEL,
+    DEFAULT_GEMINI_FLASH_MODEL,
+    DEFAULT_CLAUDE_OPUS_MODEL,
+    DEFAULT_CLAUDE_SONNET_MODEL,
+    DEFAULT_MISTRAL_LARGE_MODEL,
+    DEFAULT_MISTRAL_MEDIUM_MODEL,
+    DEFAULT_MISTRAL_SMALL_MODEL
+)
 
 class StreamingLLM(ABC):
     """Abstract base class for streaming LLM models"""
@@ -70,23 +82,15 @@ class StreamingLLM(ABC):
 class OpenAIGPT(StreamingLLM):
     """OpenAI GPT model implementation with streaming support"""
     
-    def __init__(self, model_name: str = "gpt-3.5-turbo"):
+    def __init__(self, model_name: str = DEFAULT_GPT35_MODEL):
         """Initialize the OpenAI GPT model"""
         super().__init__()
-        if not os.environ.get("OPENAI_API_KEY"):
+        if not utils.get_openai_api_key():
             raise ValueError("OpenAI API key not found in environment variables")
         
         self._client = OpenAI() # Initialize OpenAI client
         self._model_name = model_name
-
-        # Define system prompt for JEFF
-        self._jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
-        You explain complex subjects in simple, relatable terms that just click when it matters most.
-        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
-        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
-        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
-        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
-        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
+        self._jeff_system_prompt = DEFAULT_SYSTEM_PROMPT
         
     
     def get_model_name(self) -> str:
@@ -153,23 +157,16 @@ class OpenAIGPT(StreamingLLM):
 class GeminiLLM(StreamingLLM):
     """Google Gemini model implementation with streaming support"""
     
-    def __init__(self, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, model_name: str = DEFAULT_GEMINI_FLASH_MODEL):
         """Initialize the Google Gemini model"""
         super().__init__()
-        gemini_api_key = os.environ.get("GEMINI_API_KEY")
-        if not gemini_api_key:
+        api_key = utils.get_gemini_api_key()
+        if not api_key:
             raise ValueError("Gemini API key not found in environment variables")
         
-        genai.configure(api_key=gemini_api_key)
+        genai.configure(api_key=api_key)
         
-        # Define system prompt for JEFF
-        self._jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
-        You explain complex subjects in simple, relatable terms that just click when it matters most.
-        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
-        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
-        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
-        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
-        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
+        self._jeff_system_prompt = DEFAULT_SYSTEM_PROMPT
         
         self._model = genai.GenerativeModel(
             model_name=model_name,
@@ -246,23 +243,15 @@ class GeminiLLM(StreamingLLM):
 class ClaudeLLM(StreamingLLM):
     """Anthropic Claude model implementation with streaming support"""
     
-    def __init__(self, model_name: str = "claude-3-opus-20240229"):
+    def __init__(self, model_name: str = DEFAULT_CLAUDE_OPUS_MODEL):
         """Initialize the Anthropic Claude model"""
         super().__init__()
-        if not os.environ.get("ANTHROPIC_API_KEY"):
+        if not utils.get_anthropic_api_key(): # Anthropic client uses env var internally if no key provided
             raise ValueError("Anthropic API key not found in environment variables")
         
         self._client = Anthropic() # Initialize Anthropic client
         self._model_name = model_name
-
-        # Define system prompt for JEFF
-        self._jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
-        You explain complex subjects in simple, relatable terms that just click when it matters most.
-        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
-        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
-        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
-        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
-        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
+        self._jeff_system_prompt = DEFAULT_SYSTEM_PROMPT
         
     def get_model_name(self) -> str:
         """Get the name of the model"""
@@ -330,24 +319,16 @@ class ClaudeLLM(StreamingLLM):
 class MistralLLM(StreamingLLM):
     """Mistral model implementation with streaming support"""
     
-    def __init__(self, model_name: str = "mistral-large-latest"):
+    def __init__(self, model_name: str = DEFAULT_MISTRAL_LARGE_MODEL):
         """Initialize the Mistral model"""
         super().__init__()
-        api_key = os.environ.get("MISTRAL_API_KEY")
+        api_key = utils.get_mistral_api_key()
         if not api_key:
             raise ValueError("Mistral API key not found in environment variables")
         
         self._client = MistralClient(api_key=api_key)
         self._model_name = model_name
-
-        # Define system prompt for JEFF
-        self._jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
-        You explain complex subjects in simple, relatable terms that just click when it matters most.
-        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
-        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
-        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
-        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
-        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
+        self._jeff_system_prompt = DEFAULT_SYSTEM_PROMPT
         
     def get_model_name(self) -> str:
         """Get the name of the model"""
@@ -415,20 +396,20 @@ class LLMFactory:
     def create_llm(model_type: LLMModelType) -> StreamingLLM:
         """Create an LLM model based on the model type"""
         if model_type == LLMModelType.OPENAI_GPT35:
-            return OpenAIGPT(model_name="gpt-3.5-turbo")
+            return OpenAIGPT(model_name=DEFAULT_GPT35_MODEL)
         elif model_type == LLMModelType.OPENAI_GPT4:
-            return OpenAIGPT(model_name="gpt-4")
+            return OpenAIGPT(model_name=DEFAULT_GPT4_MODEL)
         elif model_type == LLMModelType.GEMINI:
-            return GeminiLLM()
+            return GeminiLLM(model_name=DEFAULT_GEMINI_FLASH_MODEL)
         elif model_type == LLMModelType.CLAUDE_3_OPUS:
-            return ClaudeLLM(model_name="claude-3-opus-20240229") 
-        elif model_type == LLMModelType.CLAUDE_37_SONNET:
-            return ClaudeLLM(model_name="claude-3-7-sonnet-20250219")
+            return ClaudeLLM(model_name=DEFAULT_CLAUDE_OPUS_MODEL)
+        elif model_type == LLMModelType.CLAUDE_37_SONNET: # Note: subject_configs uses DEFAULT_CLAUDE_SONNET_MODEL
+            return ClaudeLLM(model_name=DEFAULT_CLAUDE_SONNET_MODEL)
         elif model_type == LLMModelType.MISTRAL_LARGE:
-            return MistralLLM(model_name="mistral-large-latest")
+            return MistralLLM(model_name=DEFAULT_MISTRAL_LARGE_MODEL)
         elif model_type == LLMModelType.MISTRAL_MEDIUM:
-            return MistralLLM(model_name="mistral-medium-latest")
+            return MistralLLM(model_name=DEFAULT_MISTRAL_MEDIUM_MODEL)
         elif model_type == LLMModelType.MISTRAL_SMALL:
-            return MistralLLM(model_name="mistral-small-latest")
+            return MistralLLM(model_name=DEFAULT_MISTRAL_SMALL_MODEL)
         else:
             raise ValueError(f"Unsupported LLM model: {model_type}")

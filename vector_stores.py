@@ -502,7 +502,13 @@ class HybridVectorStore(VectorStore):
         """Add documents and their embeddings to the store"""
         self.documents = documents
         self.embeddings = embeddings
-        self.hybrid_search.index_documents(documents, embeddings)
+        # self.hybrid_search.index_documents(documents, embeddings) # Indexing is now done by HybridSearch itself
+
+    def add_documents(self, documents: List[str], embeddings: List[List[float]]) -> None:
+        """Add documents and their embeddings to the store"""
+        self.documents = documents
+        self.embeddings = embeddings # Storing raw embeddings might be useful for other ops later
+        self.hybrid_search.index_documents(documents, embeddings) # Pass to HybridSearch for its indexing
         
     def search(self, query_embedding: List[float], top_k: int = 5, query: str = None) -> List[Tuple[str, float]]:
         """
@@ -531,13 +537,142 @@ class VectorStoreFactory:
             from vector_stores import FAISSVectorStore
             return FAISSVectorStore()
         elif store_name == VectorStoreType.CHROMA:
-            from vector_stores import ChromaVectorStore
+            from vector_stores import ChromaVectorStore # Assuming this file is vector_stores.py
             return ChromaVectorStore()
         elif store_name == VectorStoreType.MILVUS:
-            from vector_stores import MilvusVectorStore
+            from vector_stores import MilvusVectorStore # Assuming this file is vector_stores.py
             return MilvusVectorStore()
         elif store_name == VectorStoreType.HYBRID:
             alpha = kwargs.get('alpha', 0.5)
-            return HybridVectorStore(alpha=alpha)
+            return HybridVectorStore(alpha=alpha) # HybridVectorStore itself imports HybridSearch
         else:
             raise ValueError(f"Unsupported vector store: {store_name}")
+
+# Paste HybridSearch class here
+class HybridSearch:
+    """Combines dense vector search with sparse keyword search (BM25)"""
+
+    def __init__(self, alpha: float = 0.5):
+        """
+        Initialize hybrid search
+
+        Args:
+            alpha: Weight for vector search scores (1-alpha = weight for BM25)
+        """
+        self.alpha = alpha
+        self.documents = [] # Stores the actual text of documents
+        self.bm25 = None
+        self.doc_embeddings = None # Stores the embeddings of the documents
+
+    def index_documents(self, documents: List[str], embeddings: List[List[float]]) -> None:
+        """Index documents for both vector search and BM25"""
+        from rank_bm25 import BM25Okapi # Moved import here
+        import re # Moved import here
+
+        self.documents = documents
+        self.doc_embeddings = np.array(embeddings) # Store numpy array of embeddings
+
+        # Tokenize documents for BM25
+        tokenized_docs = [self._tokenize(doc) for doc in documents]
+        if not tokenized_docs: # Ensure tokenized_docs is not empty
+             self.bm25 = None # Or handle as an error/warning
+             logging.warning("No documents to index for BM25 after tokenization.")
+        else:
+             self.bm25 = BM25Okapi(tokenized_docs)
+
+    def _tokenize(self, text: str) -> List[str]:
+        """Simple tokenization for BM25"""
+        import re # Moved import here
+        text = text.lower()
+        tokens = re.findall(r'\w+', text)
+        return tokens
+
+    def search(self, query: str, query_embedding: List[float], top_k: int = 5) -> List[Tuple[str, float]]:
+        """
+        Perform hybrid search using both vector similarity and BM25
+
+        Args:
+            query: Text query for keyword search
+            query_embedding: Vector embedding of the query
+            top_k: Number of results to return
+
+        Returns:
+            List of tuples with (document, score)
+        """
+        if not self.documents or self.doc_embeddings is None or len(self.documents) == 0:
+            logging.warning("HybridSearch: No documents indexed or embeddings missing.")
+            return []
+
+        # Vector search scores
+        vector_scores = self._vector_search(query_embedding)
+
+        # BM25 search scores
+        if self.bm25:
+            bm25_scores = self._bm25_search(query)
+        else:
+            bm25_scores = np.zeros(len(self.documents)) # No BM25 scores if not indexed
+            logging.warning("HybridSearch: BM25 index not available, using zero scores for BM25 part.")
+
+        # Normalize scores to [0, 1] range
+        vector_scores_norm = self._normalize_scores(vector_scores)
+        if self.bm25: # Only normalize bm25 if it was used
+            bm25_scores_norm = self._normalize_scores(bm25_scores)
+        else:
+            bm25_scores_norm = bm25_scores # Already zeros
+
+        # Combine scores with alpha weighting
+        combined_scores = self.alpha * vector_scores_norm + (1 - self.alpha) * bm25_scores_norm
+
+        # Get top k results
+        # Ensure top_k is not greater than the number of documents
+        actual_top_k = min(top_k, len(self.documents))
+        if actual_top_k == 0:
+            return []
+
+        top_indices = np.argsort(-combined_scores)[:actual_top_k]
+
+        results = [(self.documents[i], float(combined_scores[i])) for i in top_indices]
+        return results
+
+    def _vector_search(self, query_embedding: List[float]) -> np.ndarray:
+        """Calculate vector similarity scores for all documents"""
+        query_embedding_np = np.array(query_embedding) # Ensure numpy array
+
+        # Normalize query vector
+        query_norm = np.linalg.norm(query_embedding_np)
+        if query_norm > 0:
+            query_embedding_norm = query_embedding_np / query_norm
+        else:
+            query_embedding_norm = query_embedding_np # Avoid division by zero
+
+        # Normalize document embeddings (assuming self.doc_embeddings are already stored as np.array)
+        doc_norms = np.linalg.norm(self.doc_embeddings, axis=1, keepdims=True)
+        # Handle cases where doc_norms might be zero to prevent division by zero
+        normalized_doc_embeddings = np.zeros_like(self.doc_embeddings)
+        np.divide(self.doc_embeddings, doc_norms, out=normalized_doc_embeddings, where=doc_norms!=0)
+
+        similarities = np.dot(normalized_doc_embeddings, query_embedding_norm)
+        return similarities
+
+    def _bm25_search(self, query: str) -> np.ndarray:
+        """Calculate BM25 scores for all documents"""
+        if not self.bm25:
+            return np.zeros(len(self.documents)) # Return zero scores if BM25 is not initialized
+        query_tokens = self._tokenize(query)
+        scores = np.array(self.bm25.get_scores(query_tokens))
+        return scores
+
+    def _normalize_scores(self, scores: np.ndarray) -> np.ndarray:
+        """Normalize scores to [0, 1] range"""
+        if scores.size == 0: # Handle empty scores array
+            return scores
+        min_score = np.min(scores)
+        max_score = np.max(scores)
+
+        if max_score == min_score:
+            # If all scores are the same, return array of 0.5 or 1s, depending on desired behavior
+            # Returning 1s if only one document or all are equally relevant.
+            return np.ones_like(scores) if max_score > 0 else np.zeros_like(scores)
+
+        normalized = (scores - min_score) / (max_score - min_score)
+        return normalized

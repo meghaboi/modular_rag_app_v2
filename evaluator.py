@@ -2,6 +2,7 @@
 from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
 import os
+import utils # Added
 import re # Added for parsing LLM responses
 import json # Added for parsing LLM responses that might be JSON
 from langchain_openai import ChatOpenAI
@@ -9,6 +10,101 @@ from langchain_core.prompts import ChatPromptTemplate # Added for creating promp
 from langchain_google_genai import ChatGoogleGenerativeAI # Added for Gemini model
 
 from enums import EvaluationBackendType, EvaluationMetricType
+from subject_configs import (
+    DEFAULT_GPT4_MODEL,
+    DEFAULT_GPT35_MODEL,
+    DEFAULT_CLAUDE_HAIKU_MODEL,
+    DEFAULT_MISTRAL_SMALL_MODEL,
+    DEFAULT_CLAUDE_OPUS_MODEL,
+    DEFAULT_GPT4O_MODEL
+)
+
+# --- Utility Score Parsing Logic ---
+
+def _parse_score(response_text: str, score_range: tuple = (1, 5), default_score: float = 0.0) -> float:
+    """
+    Robustly parses a score from LLM response text.
+    Handles direct float conversion, regex for numbers, keyword-based scoring,
+    and clamps the result to score_range.
+    """
+    min_val, max_val = score_range
+    score = default_score
+
+    # 1. Try direct float conversion
+    try:
+        score = float(response_text.strip())
+        return min(max(score, min_val), max_val)
+    except ValueError:
+        pass # Continue to other parsing methods
+
+    # 2. Try regex to find numbers (handles "Score: 3.5" or "3")
+    # This regex looks for integers or decimals, possibly preceded by "score: " or similar.
+    # It tries to be flexible with common LLM output patterns.
+    number_matches = re.findall(r"(\b\d+\.?\d*\b)", response_text)
+    if number_matches:
+        try:
+            # Take the first number found that seems plausible as a score
+            # This might need refinement if LLMs output multiple numbers in irrelevant contexts
+            score = float(number_matches[0])
+            return min(max(score, min_val), max_val)
+        except ValueError:
+            pass # Continue if conversion of found number fails
+
+    # 3. Keyword-based scoring (example, can be expanded)
+    lower_text = response_text.lower()
+    keyword_scores = {
+        "excellent": 5.0, "perfect": 5.0, "fully": 5.0, "complete": 5.0, "highly relevant": 5.0,
+        "good": 4.0, "mostly": 4.0, "relevant": 4.0,
+        "moderate": 3.0, "average": 3.0, "partial": 3.0, "partially": 3.0,
+        "poor": 2.0, "slight": 2.0, "slightly": 2.0,
+        "terrible": 1.0, "irrelevant": 1.0, "not relevant": 1.0, "none": 1.0,
+    }
+    # More specific keywords should come first if there's overlap potential
+    # e.g., "highly relevant" before "relevant"
+    sorted_keywords = sorted(keyword_scores.keys(), key=len, reverse=True)
+
+    for keyword in sorted_keywords:
+        if keyword in lower_text:
+            score = keyword_scores[keyword]
+            # Ensure keyword-derived score is within the desired range,
+            # though typically these keywords map to scores within a 1-5 range.
+            return min(max(score, min_val), max_val)
+
+    # If all parsing fails, return the default_score clamped to the range
+    return min(max(default_score, min_val), max_val)
+
+def _get_llm_evaluation_score(
+    llm,  # Expects a Langchain LLM/ChatModel instance
+    prompt_template_str: str,
+    inputs: Dict[str, str],
+    score_range: tuple = (1, 5),
+    default_score: float = 0.0
+) -> float:
+    """
+    Gets a numerical score from an LLM based on a prompt and inputs.
+    """
+    try:
+        prompt_template = ChatPromptTemplate.from_template(prompt_template_str)
+        chain = prompt_template | llm
+        response_obj = chain.invoke(inputs)
+
+        content_to_parse = ""
+        if hasattr(response_obj, 'content'): # For AIMessage, HumanMessage, etc.
+            content_to_parse = response_obj.content
+        elif isinstance(response_obj, str): # If LLM directly returns a string
+            content_to_parse = response_obj
+        elif isinstance(response_obj, dict) and 'text' in response_obj: # Some LLMs might return dict
+             content_to_parse = response_obj['text']
+        else:
+            logging.warning(f"Unexpected LLM response type: {type(response_obj)}. Could not extract content for parsing.")
+            return default_score
+
+        return _parse_score(content_to_parse, score_range, default_score)
+    except Exception as e:
+        logging.error(f"Error during LLM evaluation call for prompt '{prompt_template_str[:50]}...': {e}", exc_info=True)
+        return default_score
+
+# --- End Utility Score Parsing Logic ---
 
 class BaseEvaluator(ABC):
     """Abstract base class for RAG evaluators"""
@@ -50,10 +146,10 @@ class BuiltinEvaluator(BaseEvaluator):
         super().__init__(metrics)
         from langchain_openai import ChatOpenAI
         
-        if not os.environ.get("OPENAI_API_KEY"):
+        if not utils.get_openai_api_key():
             raise ValueError("OpenAI API key required for built-in evaluation")
         
-        self._evaluator_model = ChatOpenAI(model_name="gpt-4")
+        self._evaluator_model = ChatOpenAI(model_name=DEFAULT_GPT4_MODEL)
     
     def evaluate(self, query: str, response: str, contexts: List[str], 
                  ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
@@ -77,23 +173,12 @@ class BuiltinEvaluator(BaseEvaluator):
         return results
     
     def _evaluate_answer_relevance(self, query: str, response: str, ground_truth: Optional[str] = None) -> float:
-        """Evaluate the relevance of the answer to the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
         template = """
         Evaluate the relevance of the answer to the question on a scale of 1 to 5.
-        
         Question: {query}
-        Answer: {response}
-        """
-        
+        Answer: {response}"""
         if ground_truth:
-            template += """
-            Ground Truth Answer: {ground_truth}
-            
-            Consider both how relevant the answer is to the question and how well it matches the ground truth.
-            """
-            
+            template += "\nGround Truth Answer: {ground_truth}\nConsider both how relevant the answer is to the question and how well it matches the ground truth."
         template += """
         Scoring guidelines:
         1: The answer is completely irrelevant to the question.
@@ -101,147 +186,62 @@ class BuiltinEvaluator(BaseEvaluator):
         3: The answer is moderately relevant but incomplete.
         4: The answer is relevant and mostly complete.
         5: The answer is highly relevant and complete.
+        Your response should be just the score (a number between 1 and 5)."""
         
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        
+        inputs = {"query": query, "response": response}
         if ground_truth:
-            chain = prompt_template | self._evaluator_model
-            response_obj = chain.invoke({
-                "query": query,
-                "response": response,
-                "ground_truth": ground_truth
-            })
-        else:
-            chain = prompt_template | self._evaluator_model
-            response_obj = chain.invoke({
-                "query": query,
-                "response": response
-            })
-        
-        # Extract score from response
-        try:
-            score = float(response_obj.content.strip())
-            return min(max(score, 1), 5)
-        except ValueError:
-            return 0  # Return 0 if score cannot be extracted
-    
+            inputs["ground_truth"] = ground_truth
+
+        return _get_llm_evaluation_score(self._evaluator_model, template, inputs, default_score=0.0)
+
     def _evaluate_context_relevance(self, query: str, contexts: List[str]) -> float:
-        """Evaluate the relevance of the contexts to the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         Evaluate the relevance of the provided contexts to the question on a scale of 1 to 5.
-        
         Question: {query}
-        
         Contexts:
         {contexts}
-        
         Scoring guidelines:
         1: The contexts are completely irrelevant to the question.
         2: The contexts are slightly relevant but miss important information.
         3: The contexts are moderately relevant but incomplete.
         4: The contexts are relevant and contain most of the necessary information.
         5: The contexts are highly relevant and contain all necessary information.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | self._evaluator_model
-        response = chain.invoke({
-            "query": query,
-            "contexts": context_text
-        })
-        
-        # Extract score from response
-        try:
-            score = float(response.content.strip())
-            return min(max(score, 1), 5)
-        except ValueError:
-            return 0  # Return 0 if score cannot be extracted
-    
+        Your response should be just the score (a number between 1 and 5)."""
+        return _get_llm_evaluation_score(self._evaluator_model, template, {"query": query, "contexts": context_text}, default_score=0.0)
+
     def _evaluate_groundedness(self, response: str, contexts: List[str]) -> float:
-        """Evaluate if the response is grounded in the provided contexts"""
-        from langchain.prompts import ChatPromptTemplate
-        
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         Evaluate the groundedness of the answer in the provided contexts on a scale of 1 to 5.
-        
         Answer: {response}
-        
         Contexts:
         {contexts}
-        
         Scoring guidelines:
         1: The answer contains information not present in the contexts (hallucination).
         2: The answer has significant content not grounded in the contexts.
         3: The answer is partially grounded in the contexts but includes some ungrounded statements.
         4: The answer is mostly grounded in the contexts with minor extrapolations.
         5: The answer is completely grounded in the contexts with no hallucinations.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | self._evaluator_model
-        response_obj = chain.invoke({
-            "response": response,
-            "contexts": context_text
-        })
-        
-        # Extract score from response
-        try:
-            score = float(response_obj.content.strip())
-            return min(max(score, 1), 5)
-        except ValueError:
-            return 0  # Return 0 if score cannot be extracted
-    
+        Your response should be just the score (a number between 1 and 5)."""
+        return _get_llm_evaluation_score(self._evaluator_model, template, {"response": response, "contexts": context_text}, default_score=0.0)
+
     def _evaluate_faithfulness(self, response: str, contexts: List[str]) -> float:
-        """Evaluate the faithfulness of the response to the provided contexts"""
-        from langchain.prompts import ChatPromptTemplate
-        
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         Evaluate the faithfulness of the answer to the provided contexts on a scale of 1 to 5.
-        
         Answer: {response}
-        
         Contexts:
         {contexts}
-        
         Scoring guidelines:
         1: The answer contradicts or misrepresents the information in the contexts.
         2: The answer includes significant misinterpretations of the contexts.
         3: The answer is partially faithful but includes some misinterpretations.
         4: The answer is mostly faithful with minor inaccuracies.
         5: The answer is completely faithful to the information in the contexts.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | self._evaluator_model
-        response_obj = chain.invoke({
-            "response": response,
-            "contexts": context_text
-        })
-        
-        # Extract score from response
-        try:
-            score = float(response_obj.content.strip())
-            return min(max(score, 1), 5)
-        except ValueError:
-            return 0  # Return 0 if score cannot be extracted
-    
+        Your response should be just the score (a number between 1 and 5)."""
+        return _get_llm_evaluation_score(self._evaluator_model, template, {"response": response, "contexts": context_text}, default_score=0.0)
+
     @property
     def supported_metrics(self) -> List[str]:
         return [
@@ -257,59 +257,63 @@ class BuiltinEvaluator(BaseEvaluator):
     
     @property
     def description(self) -> str:
-        return "Uses GPT-4 to evaluate RAG output on various dimensions"
+        return f"Uses {DEFAULT_GPT4_MODEL} to evaluate RAG output on various dimensions"
 
-class RAGASEvaluator(BaseEvaluator):
-    """RAGAS-based evaluator for RAG systems"""
+class RAGASEvaluator(BaseEvaluator): # Renamed from RAGASEvaluatorV2
+    """RAGAS-based evaluator for RAG systems - This is the consolidated version."""
     
     def __init__(self, metrics: List[str] = None):
         """
         Initialize the RAGAS evaluator with optional metrics
         
         Args:
-            metrics: List of metric names to use (default: all supported metrics)
+            metrics: List of metric names to use (default: all supported RAGAS metrics)
         """
-        # Import RAGAS metrics
+        super().__init__(metrics or []) # Ensure metrics is initialized in BaseEvaluator
         try:
             import ragas
+            # These are the core RAGAS metric functions
             from ragas.metrics import (
                 faithfulness,
-                # answer_correctness, # Removed as per user request
+                answer_correctness,
                 context_precision,
                 context_recall
             )
-            # Import class-based metrics for explicit LLM initialization
-            from ragas.metrics import Faithfulness, ContextPrecision, ContextRecall 
-            # AnswerCorrectness is not imported as it's being removed
         except ImportError as e:
-            raise ValueError(f"Required library not installed: {e}")
-        
-        # Store RAGAS metric objects, using class-based metrics initialized with the LLM
-        self._ragas_metrics = {
-            "faithfulness": Faithfulness(),
-            # "answer_correctness": AnswerCorrectness(llm=self._llm), # Removed
-            "context_precision": ContextPrecision(),
-            "context_recall": ContextRecall()
+            raise ImportError(f"RAGAS not installed. Please install with `pip install ragas`. Error: {e}")
+
+        # Store RAGAS metric objects/functions
+        self._ragas_metric_fns = {
+            EvaluationMetricType.FAITHFULNESS.value: faithfulness,
+            EvaluationMetricType.ANSWER_CORRECTNESS.value: answer_correctness,
+            EvaluationMetricType.CONTEXT_PRECISION.value: context_precision,
+            EvaluationMetricType.CONTEXT_RECALL.value: context_recall,
         }
         
-        # Use all metrics if none specified (answer_correctness is already excluded from _ragas_metrics)
+        # Determine which metrics to use for RAGAS evaluation (excluding COST if present)
         if metrics is None:
-            self._metrics = list(self._ragas_metrics.keys())
+            self.ragas_specific_metrics = [
+                EvaluationMetricType.FAITHFULNESS.value,
+                EvaluationMetricType.ANSWER_CORRECTNESS.value,
+                EvaluationMetricType.CONTEXT_PRECISION.value,
+                EvaluationMetricType.CONTEXT_RECALL.value
+            ]
         else:
-            # Validate provided metrics
-            invalid_metrics = [m for m in metrics if m not in self._ragas_metrics and m != "f1_score"]
-            if invalid_metrics:
-                raise ValueError(f"Unsupported metrics: {invalid_metrics}")
-            self._metrics = metrics
+            self.ragas_specific_metrics = [m for m in metrics if m in self._ragas_metric_fns]
+
+        # API Key Checks for RAGAS dependencies (often OpenAI for critiques)
+        if not utils.get_openai_api_key():
+            raise ValueError("OpenAI API key is required for RAGAS, as it's often used for underlying critiques.")
         
-        # Verify OpenAI API key exists for RAGAS
-        if not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError("OpenAI API key required for RAGAS evaluation")
-        
-        # Configure RAGAS to use this LLM
-        import ragas
-        ragas.llm = self._llm
-    
+        # RAGAS uses a global configuration for LLMs, or can be passed to `evaluate`
+        # Set a default LLM for RAGAS internal operations if not overridden in evaluate
+        from langchain_openai import ChatOpenAI
+        self._default_ragas_llm = ChatOpenAI(model_name=DEFAULT_GPT35_MODEL)
+        # It's generally better to pass the LLM to ragas.evaluate if possible,
+        # but setting a global fallback can be done like this:
+        # if not hasattr(ragas, 'llm') or ragas.llm is None:
+        #     ragas.llm = self._default_ragas_llm
+
     def evaluate(self, query: str, response: str, contexts: List[str], 
                 ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """
@@ -359,88 +363,39 @@ class RAGASEvaluator(BaseEvaluator):
             # Log the type and structure of the results object
             logging.info(f"RAGAS results type: {type(results)}")
             
-            # Log all attributes of the results object
-            for attr_name in dir(results):
-                if not attr_name.startswith('_') and not callable(getattr(results, attr_name)):
-                    value = getattr(results, attr_name)
-                    logging.info(f"  {attr_name}: {value} (type: {type(value)})")
+            # Log results for debugging
+            logging.info(f"RAGAS evaluation results: {results}")
             
-            # Check for 'scores' attribute directly (common in newer RAGAS versions)
-            if hasattr(results, 'scores') and results.scores:
-                logging.info(f"Found scores attribute: {results.scores}")
-                
-                # Handle different result structures
-                if isinstance(results.scores, list) and len(results.scores) > 0:
-                    scores_data = results.scores[0] if isinstance(results.scores[0], dict) else {}
-                    for metric in self._metrics:
-                        if metric in scores_data:
-                            raw_value = float(scores_data[metric])
-                            # Scale 0-1 to 1-5
-                            scaled_value = 1.0 + raw_value * 4.0
-                            metrics_dict[metric] = round(scaled_value, 2)
-                        else:
-                            # Try alternate names
-                            found = False
-                            for alt_name in self.metric_name_map.get(metric, []):
-                                if alt_name in scores_data:
-                                    raw_value = float(scores_data[alt_name])
-                                    # Scale 0-1 to 1-5
-                                    scaled_value = 1.0 + raw_value * 4.0
-                                    metrics_dict[metric] = round(scaled_value, 2)
-                                    logging.info(f"Found metric {metric} as {alt_name}, value: {raw_value}")
-                                    found = True
-                                    break
-                            
-                            if not found:
-                                logging.warning(f"Metric {metric} not found in scores dictionary")
-                                metrics_dict[metric] = 3.0
-                elif isinstance(results.scores, dict):
-                    for metric in self._metrics:
-                        if metric in results.scores:
-                            raw_value = float(results.scores[metric])
-                            # Scale 0-1 to 1-5
-                            scaled_value = 1.0 + raw_value * 4.0
-                            metrics_dict[metric] = round(scaled_value, 2)
-                        else:
-                            # Try alternate names
-                            found = False
-                            for alt_name in self.metric_name_map.get(metric, []):
-                                if alt_name in results.scores:
-                                    raw_value = float(results.scores[alt_name])
-                                    # Scale 0-1 to 1-5
-                                    scaled_value = 1.0 + raw_value * 4.0
-                                    metrics_dict[metric] = round(scaled_value, 2)
-                                    logging.info(f"Found metric {metric} as {alt_name}, value: {raw_value}")
-                                    found = True
-                                    break
-                            
-                            if not found:
-                                logging.warning(f"Metric {metric} not found in scores dictionary")
-                                metrics_dict[metric] = 3.0
-            
-            # Calculate F1 score if both context_recall and context_precision are available
-            if "f1_score" in self._metrics:
-                recall = metrics_dict.get("context_recall", 0)
-                precision = metrics_dict.get("context_precision", 0)
-                
-                if recall > 0 and precision > 0:
-                    # Convert from 1-5 scale to 0-1 scale for calculation
-                    recall_01 = (recall - 1) / 4
-                    precision_01 = (precision - 1) / 4
+            # RAGAS returns scores in a dictionary, typically with metric names as keys.
+            # These scores are usually between 0 and 1.
+            # We need to scale them to 1-5.
+            scaled_metrics_dict = {}
+            if isinstance(results, dict):
+                for metric_name_key, raw_score in results.items(): # RAGAS might use keys like 'faithfulness' not matching Enum exactly
+                    # Find the corresponding Enum value for the key from RAGAS
+                    matched_metric_enum_value = None
+                    for enum_member in EvaluationMetricType:
+                        if enum_member.value == metric_name_key:
+                            matched_metric_enum_value = enum_member.value
+                            break
                     
-                    # Calculate harmonic mean (F1 score)
-                    f1_score = 2 * (recall_01 * precision_01) / (recall_01 + precision_01)
-                    
-                    # Convert back to 1-5 scale
-                    f1_score_scaled = 1.0 + f1_score * 4.0
-                    metrics_dict["f1_score"] = round(f1_score_scaled, 2)
-                else:
-                    metrics_dict["f1_score"] = 3.0  # Default middle value if components missing
+                    if matched_metric_enum_value and matched_metric_enum_value in self.ragas_specific_metrics:
+                        try:
+                            scaled_value = 1.0 + (float(raw_score) * 4.0) # Scale 0-1 to 1-5
+                            scaled_metrics_dict[matched_metric_enum_value] = round(scaled_value, 2)
+                        except (ValueError, TypeError) as e:
+                            logging.warning(f"Could not parse or scale score for RAGAS metric '{matched_metric_enum_value}': {raw_score}. Error: {e}")
+                            scaled_metrics_dict[matched_metric_enum_value] = 3.0 # Default middle value on error
+                    elif metric_name_key not in self.ragas_specific_metrics:
+                         logging.debug(f"RAGAS returned metric '{metric_name_key}' which was not requested or is not directly mapped. Skipping.")
+            else:
+                logging.warning(f"RAGAS results were not in the expected dictionary format. Results: {results}")
+
+            if cost is not None and EvaluationMetricType.COST.value in self._metrics: # Check if cost was requested
+                scaled_metrics_dict[EvaluationMetricType.COST.value] = cost
             
-            if cost is not None:
-                metrics_dict[EvaluationMetricType.COST.value] = cost
-            
-            return metrics_dict
+            logging.info(f"Final scaled RAGAS metrics: {scaled_metrics_dict}")
+            return scaled_metrics_dict
             
         except Exception as e:
             logging.error(f"RAGAS evaluation error: {str(e)}")
@@ -448,30 +403,32 @@ class RAGASEvaluator(BaseEvaluator):
             logging.error(traceback.format_exc())
             
             # Return default values on complete failure
-            return {metric: 3.0 for metric in self._metrics}
+            # Ensure we only return defaults for metrics that were supposed to be evaluated by RAGAS
+            return {metric: 3.0 for metric in self.ragas_specific_metrics}
     
     @property
     def supported_metrics(self) -> List[str]:
         """Return list of metrics supported by this evaluator"""
-        return list(self._ragas_metrics.keys()) + ["f1_score"]
+        # Returns the RAGAS metrics this class can calculate
+        return list(self._ragas_metric_fns.keys())
     
     @property
     def name(self) -> str:
-        return "RAGAS Evaluator"
+        return "RAGAS Evaluator" # Renamed from RAGASEvaluatorV2
     
     @property
     def description(self) -> str:
-        return "Uses RAGAS framework to evaluate RAG system performance"
+        return "Uses RAGAS framework with metrics like faithfulness, answer_correctness, context_precision, and context_recall."
 
 class LangSmithEvaluator(BaseEvaluator):
     """LangSmith-based evaluator for RAG systems using direct API calls without database dependencies"""
     
     def __init__(self, metrics: List[str]):
         """Initialize the LangSmith evaluator"""
-        super().__init__(metrics)
+        super().__init__(metrics) # Pass all metrics to base
         
         # Verify LangChain API key exists
-        if not os.environ.get("LANGCHAIN_API_KEY"):
+        if not utils.get_langchain_api_key():
             raise ValueError("LangChain API key required for LangSmith evaluation")
         
         # Import required libraries for LLM-based evaluation
@@ -481,7 +438,7 @@ class LangSmithEvaluator(BaseEvaluator):
             raise ValueError(f"Required library not installed: {e}")
         
         # Initialize evaluator model for metrics
-        self.evaluator_model = ChatOpenAI(model_name="gpt-4")
+        self.evaluator_model = ChatOpenAI(model_name=DEFAULT_GPT4_MODEL)
         
         # Define supported metrics
         self._supported_metrics = [
@@ -513,25 +470,13 @@ class LangSmithEvaluator(BaseEvaluator):
         return results
     
     def _evaluate_answer_relevance(self, query: str, response: str, ground_truth: Optional[str] = None) -> float:
-        """Evaluate the relevance of the answer to the query using LangSmith-inspired prompts"""
-        from langchain.prompts import ChatPromptTemplate
-        
-        # Use LangSmith-style prompting but directly with the LLM
         template = """
         You are an expert evaluator of RAG (Retrieval-Augmented Generation) systems.
         Your task is to evaluate the relevance of an answer to a given question.
-        
         Question: {query}
-        Answer: {response}
-        """
-        
+        Answer: {response}"""
         if ground_truth:
-            template += """
-            Ground Truth Answer: {ground_truth}
-            
-            Consider both how relevant the answer is to the question and how well it matches the ground truth.
-            """
-            
+            template += "\nGround Truth Answer: {ground_truth}\nConsider both how relevant the answer is to the question and how well it matches the ground truth."
         template += """
         Scoring guidelines:
         1: The answer is completely irrelevant to the question.
@@ -539,150 +484,64 @@ class LangSmithEvaluator(BaseEvaluator):
         3: The answer is moderately relevant but incomplete.
         4: The answer is relevant and mostly complete.
         5: The answer is highly relevant and complete.
+        Your response must be exactly one number between 1 and 5, with no additional explanation."""
         
-        Your response must be exactly one number between 1 and 5, with no additional explanation.
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        
+        inputs = {"query": query, "response": response}
         if ground_truth:
-            chain = prompt_template | self.evaluator_model
-            response_obj = chain.invoke({
-                "query": query,
-                "response": response,
-                "ground_truth": ground_truth
-            })
-        else:
-            chain = prompt_template | self.evaluator_model
-            response_obj = chain.invoke({
-                "query": query,
-                "response": response
-            })
-        
-        # Extract score from response
-        try:
-            score = float(response_obj.content.strip())
-            return min(max(score, 1), 5)
-        except ValueError:
-            return 0  # Return 0 if score cannot be extracted
-    
+            inputs["ground_truth"] = ground_truth
+        return _get_llm_evaluation_score(self.evaluator_model, template, inputs, default_score=0.0)
+
     def _evaluate_context_relevance(self, query: str, contexts: List[str]) -> float:
-        """Evaluate the relevance of contexts to the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         You are an expert evaluator of RAG (Retrieval-Augmented Generation) systems.
         Your task is to evaluate how relevant the retrieved contexts are to the question.
-        
         Question: {query}
-        
         Retrieved Contexts:
         {contexts}
-        
         Scoring guidelines:
         1: The contexts are completely irrelevant to the question.
         2: The contexts are slightly relevant but miss important information.
         3: The contexts are moderately relevant but incomplete.
         4: The contexts are relevant and contain most of the necessary information.
         5: The contexts are highly relevant and contain all necessary information.
-        
-        Your response must be exactly one number between 1 and 5, with no additional explanation.
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | self.evaluator_model
-        response = chain.invoke({
-            "query": query,
-            "contexts": context_text
-        })
-        
-        # Extract score from response
-        try:
-            score = float(response.content.strip())
-            return min(max(score, 1), 5)
-        except ValueError:
-            return 0  # Return 0 if score cannot be extracted
-    
+        Your response must be exactly one number between 1 and 5, with no additional explanation."""
+        return _get_llm_evaluation_score(self.evaluator_model, template, {"query": query, "contexts": context_text}, default_score=0.0)
+
     def _evaluate_groundedness(self, response: str, contexts: List[str]) -> float:
-        """Evaluate if the response is grounded in the provided contexts"""
-        from langchain.prompts import ChatPromptTemplate
-        
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         You are an expert evaluator of RAG (Retrieval-Augmented Generation) systems.
         Your task is to evaluate if the generated answer is grounded in the provided contexts.
-        
         Answer: {response}
-        
         Retrieved Contexts:
         {contexts}
-        
         Scoring guidelines:
         1: The answer contains information not present in the contexts (hallucination).
         2: The answer has significant content not grounded in the contexts.
         3: The answer is partially grounded in the contexts but includes some ungrounded statements.
         4: The answer is mostly grounded in the contexts with minor extrapolations.
         5: The answer is completely grounded in the contexts with no hallucinations.
-        
-        Your response must be exactly one number between 1 and 5, with no additional explanation.
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | self.evaluator_model
-        response_obj = chain.invoke({
-            "response": response,
-            "contexts": context_text
-        })
-        
-        # Extract score from response
-        try:
-            score = float(response_obj.content.strip())
-            return min(max(score, 1), 5)
-        except ValueError:
-            return 0  # Return 0 if score cannot be extracted
-    
+        Your response must be exactly one number between 1 and 5, with no additional explanation."""
+        return _get_llm_evaluation_score(self.evaluator_model, template, {"response": response, "contexts": context_text}, default_score=0.0)
+
     def _evaluate_faithfulness(self, response: str, contexts: List[str]) -> float:
-        """Evaluate the faithfulness of the response to the provided contexts"""
-        from langchain.prompts import ChatPromptTemplate
-        
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         You are an expert evaluator of RAG (Retrieval-Augmented Generation) systems.
         Your task is to evaluate how faithful the generated answer is to the information in the provided contexts.
-        
         Answer: {response}
-        
         Retrieved Contexts:
         {contexts}
-        
         Scoring guidelines:
         1: The answer contradicts or misrepresents the information in the contexts.
         2: The answer includes significant misinterpretations of the contexts.
         3: The answer is partially faithful but includes some misinterpretations.
         4: The answer is mostly faithful with minor inaccuracies.
         5: The answer is completely faithful to the information in the contexts.
-        
-        Your response must be exactly one number between 1 and 5, with no additional explanation.
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | self.evaluator_model
-        response_obj = chain.invoke({
-            "response": response,
-            "contexts": context_text
-        })
-        
-        # Extract score from response
-        try:
-            score = float(response_obj.content.strip())
-            return min(max(score, 1), 5)
-        except ValueError:
-            return 0  # Return 0 if score cannot be extracted
-    
+        Your response must be exactly one number between 1 and 5, with no additional explanation."""
+        return _get_llm_evaluation_score(self.evaluator_model, template, {"response": response, "contexts": context_text}, default_score=0.0)
+
     @property
     def supported_metrics(self) -> List[str]:
         """Return list of metrics supported by this evaluator"""
@@ -696,7 +555,7 @@ class LangSmithEvaluator(BaseEvaluator):
     @property
     def description(self) -> str:
         """Return a description of the evaluator"""
-        return "Uses LangSmith-inspired evaluation techniques for assessing RAG system performance"
+        return f"Uses LangSmith-inspired evaluation techniques (with {DEFAULT_GPT4_MODEL}) for assessing RAG system performance"
 
 class DeepEvaluator(BaseEvaluator):
     """Evaluator using smaller, specialized LLMs for different metrics"""
@@ -713,19 +572,19 @@ class DeepEvaluator(BaseEvaluator):
             raise ValueError(f"Required library not installed: {e}")
         
         # Check for required API keys
-        if not os.environ.get("OPENAI_API_KEY"):
+        if not utils.get_openai_api_key(): # Base evaluator model is OpenAI
             raise ValueError("OpenAI API key required for DeepEvaluator")
         
         # Initialize different models for different evaluation tasks
         # Using smaller models for faster, more cost-effective evaluation
-        self._general_evaluator = ChatOpenAI(model_name="gpt-3.5-turbo")
+        self._general_evaluator = ChatOpenAI(model_name=DEFAULT_GPT35_MODEL)
         
         # For metrics that need more careful analysis, use a more capable model
         self._deep_evaluator = None
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            self._deep_evaluator = ChatAnthropic(model="claude-3-haiku-20240307")
-        elif os.environ.get("MISTRAL_API_KEY"):
-            self._deep_evaluator = ChatMistralAI(model="mistral-small")
+        if utils.get_anthropic_api_key():
+            self._deep_evaluator = ChatAnthropic(model=DEFAULT_CLAUDE_HAIKU_MODEL)
+        elif utils.get_mistral_api_key():
+            self._deep_evaluator = ChatMistralAI(model=DEFAULT_MISTRAL_SMALL_MODEL)
         else:
             # Fallback to OpenAI
             self._deep_evaluator = self._general_evaluator
@@ -770,74 +629,16 @@ class DeepEvaluator(BaseEvaluator):
         
         return results
     
-    def _extract_score_from_response(self, response_text: str) -> float:
-        """
-        Extract a numeric score from LLM response with improved robustness.
-        Returns a score between 1 and 5, with better fallback handling.
-        """
-        # First try direct extraction of a single number
-        try:
-            score = float(response_text.strip())
-            return min(max(score, 1), 5)
-        except ValueError:
-            pass
-        
-        # Try to extract the first number from the text
-        import re
-        number_matches = re.findall(r'\d+\.?\d*', response_text)
-        if number_matches:
-            try:
-                score = float(number_matches[0])
-                if 1 <= score <= 5:
-                    return score
-            except ValueError:
-                pass
-        
-        # Look for score indicators in text
-        lower_text = response_text.lower()
-        if "score: " in lower_text:
-            score_text = lower_text.split("score: ")[1].split()[0]
-            try:
-                score = float(score_text)
-                return min(max(score, 1), 5)
-            except ValueError:
-                pass
-        
-        # Check for textual indicators
-        if "excellent" in lower_text or "perfect" in lower_text or "completely" in lower_text:
-            return 5.0
-        elif "good" in lower_text or "mostly" in lower_text:
-            return 4.0
-        elif "moderate" in lower_text or "partial" in lower_text or "average" in lower_text:
-            return 3.0
-        elif "poor" in lower_text or "slight" in lower_text:
-            return 2.0
-        elif "terrible" in lower_text or "complete" in lower_text and "irrelevant" in lower_text:
-            return 1.0
-            
-        # Default to middle score if all extraction methods fail
-        return 3.0
+    # The original _extract_score_from_response method is now replaced by the global _parse_score utility.
     
     def _evaluate_answer_relevance(self, query: str, response: str, ground_truth: Optional[str] = None) -> float:
-        """Evaluate the relevance of the answer to the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["answer_relevance"]
-        
         template = """
         Evaluate the relevance of the answer to the question on a scale of 1 to 5.
-        
         Question: {query}
-        Answer: {response}
-        """
-        
+        Answer: {response}"""
         if ground_truth:
-            template += """
-            Ground Truth Answer: {ground_truth}
-            
-            Consider both how relevant the answer is to the question and how well it matches the ground truth.
-            """
-            
+            template += "\nGround Truth Answer: {ground_truth}\nConsider both how relevant the answer is to the question and how well it matches the ground truth."
         template += """
         Scoring guidelines:
         1: The answer is completely irrelevant to the question.
@@ -845,199 +646,94 @@ class DeepEvaluator(BaseEvaluator):
         3: The answer is moderately relevant but incomplete.
         4: The answer is relevant and mostly complete.
         5: The answer is highly relevant and complete.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        
+        Your response should be just the score (a number between 1 and 5)."""
+        inputs = {"query": query, "response": response}
         if ground_truth:
-            chain = prompt_template | model
-            response_obj = chain.invoke({
-                "query": query,
-                "response": response,
-                "ground_truth": ground_truth
-            })
-        else:
-            chain = prompt_template | model
-            response_obj = chain.invoke({
-                "query": query,
-                "response": response
-            })
-        
-        # Use the improved score extraction method
-        return self._extract_score_from_response(response_obj.content)
-    
+            inputs["ground_truth"] = ground_truth
+        return _get_llm_evaluation_score(model, template, inputs, default_score=0.0)
+
     def _evaluate_context_relevance(self, query: str, contexts: List[str]) -> float:
-        """Evaluate the relevance of the contexts to the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["context_relevance"]
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         Evaluate the relevance of the provided contexts to the question on a scale of 1 to 5.
-        
         Question: {query}
-        
         Contexts:
         {contexts}
-        
         Scoring guidelines:
         1: The contexts are completely irrelevant to the question.
         2: The contexts are slightly relevant but miss important information.
         3: The contexts are moderately relevant but incomplete.
         4: The contexts are relevant and contain most of the necessary information.
         5: The contexts are highly relevant and contain all necessary information.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | model
-        response = chain.invoke({
-            "query": query,
-            "contexts": context_text
-        })
-        
-        # Use the improved score extraction method
-        return self._extract_score_from_response(response.content)
-    
+        Your response should be just the score (a number between 1 and 5)."""
+        return _get_llm_evaluation_score(model, template, {"query": query, "contexts": context_text}, default_score=0.0)
+
     def _evaluate_groundedness(self, response: str, contexts: List[str]) -> float:
-        """Evaluate if the response is grounded in the provided contexts"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["groundedness"]
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         Evaluate the groundedness of the answer in the provided contexts on a scale of 1 to 5.
-        
         Answer: {response}
-        
         Contexts:
         {contexts}
-        
         Scoring guidelines:
         1: The answer contains information not present in the contexts (hallucination).
         2: The answer has significant content not grounded in the contexts.
         3: The answer is partially grounded in the contexts but includes some ungrounded statements.
         4: The answer is mostly grounded in the contexts with minor extrapolations.
         5: The answer is completely grounded in the contexts with no hallucinations.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | model
-        response_obj = chain.invoke({
-            "response": response,
-            "contexts": context_text
-        })
-        
-        # Use the improved score extraction method
-        return self._extract_score_from_response(response_obj.content)
-    
+        Your response should be just the score (a number between 1 and 5)."""
+        return _get_llm_evaluation_score(model, template, {"response": response, "contexts": context_text}, default_score=0.0)
+
     def _evaluate_faithfulness(self, response: str, contexts: List[str]) -> float:
-        """Evaluate the faithfulness of the response to the provided contexts"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["faithfulness"]
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         Evaluate the faithfulness of the answer to the provided contexts on a scale of 1 to 5.
-        
         Answer: {response}
-        
         Contexts:
         {contexts}
-        
         Scoring guidelines:
         1: The answer contradicts or misrepresents the information in the contexts.
         2: The answer includes significant misinterpretations of the contexts.
         3: The answer is partially faithful but includes some misinterpretations.
         4: The answer is mostly faithful with minor inaccuracies.
         5: The answer is completely faithful to the information in the contexts.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | model
-        response_obj = chain.invoke({
-            "response": response,
-            "contexts": context_text
-        })
-        
-        # Use the improved score extraction method
-        return self._extract_score_from_response(response_obj.content)
-    
-    def _evaluate_answer_consistency(self, response: str, contexts: List[str]) -> float:
-        """Custom metric: Evaluate the internal consistency of the answer"""
-        from langchain.prompts import ChatPromptTemplate
-        
+        Your response should be just the score (a number between 1 and 5)."""
+        return _get_llm_evaluation_score(model, template, {"response": response, "contexts": context_text}, default_score=0.0)
+
+    def _evaluate_answer_consistency(self, response: str, contexts: List[str]) -> float: # Contexts might not be needed here, but kept for signature consistency
         model = self._metric_to_model["answer_consistency"]
-        
         template = """
         Evaluate the internal consistency of the answer on a scale of 1 to 5.
-        
         Answer: {response}
-        
         Scoring guidelines:
         1: The answer contains severe internal contradictions or logical inconsistencies.
         2: The answer has noticeable contradictions or logical flaws.
         3: The answer has minor inconsistencies but maintains overall coherence.
         4: The answer is mostly consistent with minimal logical issues.
         5: The answer is perfectly consistent with no contradictions or logical flaws.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | model
-        response_obj = chain.invoke({
-            "response": response
-        })
-        
-        # Use the improved score extraction method
-        return self._extract_score_from_response(response_obj.content)
-    
+        Your response should be just the score (a number between 1 and 5)."""
+        return _get_llm_evaluation_score(model, template, {"response": response}, default_score=0.0)
+
     def _evaluate_context_coverage(self, query: str, contexts: List[str]) -> float:
-        """Custom metric: Evaluate how well the contexts cover different aspects of the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["context_coverage"]
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         First, identify the key aspects or sub-questions contained in the main question.
         Then evaluate how completely the provided contexts cover these aspects on a scale of 1 to 5.
-        
         Question: {query}
-        
         Contexts:
         {contexts}
-        
         Scoring guidelines:
         1: The contexts fail to address most aspects of the question.
         2: The contexts address only a few aspects of the question.
         3: The contexts address about half of the aspects of the question.
         4: The contexts address most aspects of the question.
         5: The contexts comprehensively address all aspects of the question.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        chain = prompt_template | model
-        response = chain.invoke({
-            "query": query,
-            "contexts": context_text
-        })
-        
-        # Use the improved score extraction method
-        return self._extract_score_from_response(response.content)
+        Your response should be just the score (a number between 1 and 5)."""
+        return _get_llm_evaluation_score(model, template, {"query": query, "contexts": context_text}, default_score=0.0)
     
     @property
     def supported_metrics(self) -> List[str]:
@@ -1062,11 +758,12 @@ class RAGASEvaluatorV2(BaseEvaluator):
         Initialize the RAGAS evaluator with optional metrics
         
         Args:
-            metrics: List of metric names to use (default: all supported metrics)
+            metrics: List of metric names to use (default: all supported RAGAS metrics)
         """
-        # Import RAGAS metrics
+        super().__init__(metrics or []) # Ensure metrics is initialized in BaseEvaluator
         try:
             import ragas
+            # These are the core RAGAS metric functions
             from ragas.metrics import (
                 faithfulness,
                 answer_correctness,
@@ -1074,38 +771,44 @@ class RAGASEvaluatorV2(BaseEvaluator):
                 context_recall
             )
         except ImportError as e:
-            raise ValueError(f"Required library not installed: {e}")
-        
-        # Store RAGAS metric objects
-        self._ragas_metrics = {
-            "faithfulness": faithfulness,
-            "answer_correctness": answer_correctness,
-            "context_precision": context_precision,
-            "context_recall": context_recall
+            raise ImportError(f"RAGAS not installed. Please install with `pip install ragas`. Error: {e}")
+
+        # Store RAGAS metric objects/functions
+        self._ragas_metric_fns = {
+            EvaluationMetricType.FAITHFULNESS.value: faithfulness,
+            EvaluationMetricType.ANSWER_CORRECTNESS.value: answer_correctness,
+            EvaluationMetricType.CONTEXT_PRECISION.value: context_precision,
+            EvaluationMetricType.CONTEXT_RECALL.value: context_recall,
         }
         
-        # Use all metrics if none specified
+        # Determine which metrics to use
         if metrics is None:
-            self._metrics = list(self._ragas_metrics.keys())
+            self._metrics = [
+                EvaluationMetricType.FAITHFULNESS.value,
+                EvaluationMetricType.ANSWER_CORRECTNESS.value,
+                EvaluationMetricType.CONTEXT_PRECISION.value,
+                EvaluationMetricType.CONTEXT_RECALL.value
+            ]
         else:
             # Validate provided metrics
-            invalid_metrics = [m for m in metrics if m not in self._ragas_metrics]
-            if invalid_metrics:
-                raise ValueError(f"Unsupported metrics: {invalid_metrics}")
-            self._metrics = metrics
-        
-        # Verify OpenAI API key exists for RAGAS
-        if not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError("OpenAI API key required for RAGAS evaluation")
-        
-        # Initialize the LLM for RAGAS
+            for m in metrics:
+                if m not in self._ragas_metric_fns:
+                    # Allow cost as a metric, it's handled separately
+                    if m != EvaluationMetricType.COST.value:
+                        raise ValueError(f"Unsupported RAGAS metric: {m}. Supported: {list(self._ragas_metric_fns.keys())}")
+            self._metrics = [m for m in metrics if m in self._ragas_metric_fns] # Only keep valid RAGAS metrics for RAGAS eval
+
+        # API Key Checks for RAGAS dependencies (often OpenAI for critiques)
+        if not utils.get_openai_api_key():
+            raise ValueError("OpenAI API key is required for RAGAS, as it's often used for underlying critiques.")
+
+        # RAGAS uses a global configuration for LLMs, or can be passed to `evaluate`
+        # Set a default LLM for RAGAS internal operations if not overridden in evaluate
         from langchain_openai import ChatOpenAI
-        self._llm = ChatOpenAI(model_name="gpt-3.5-turbo")
-        
-        # Configure RAGAS to use this LLM
-        import ragas
-        ragas.llm = self._llm
-    
+        self._default_ragas_llm = ChatOpenAI(model_name=DEFAULT_GPT35_MODEL)
+        if not hasattr(ragas, 'llm') or ragas.llm is None: # Check if already set globally
+            ragas.llm = self._default_ragas_llm # Set a default if not set
+
     def evaluate(self, query: str, response: str, contexts: List[str], 
                 ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """
@@ -1151,8 +854,8 @@ class RAGASEvaluatorV2(BaseEvaluator):
             active_metrics = [self._ragas_metrics[metric] for metric in self._metrics 
                             if metric in self._ragas_metrics]
 
-            chatLLM = ChatOpenAI(
-            model="gpt-4o",
+            chatLLM = ChatOpenAI( # TODO: This should also be a config
+            model=DEFAULT_GPT4O_MODEL,
             temperature=0.0,
             )
 
@@ -1160,68 +863,33 @@ class RAGASEvaluatorV2(BaseEvaluator):
             results = ragas_evaluate(ds, metrics=active_metrics, llm=chatLLM)
             
             # Log results for debugging
-            logging.info(f"RAGAS results: {results}")
+            logging.info(f"RAGAS evaluation results: {results}")
             
-            logging.info(f"Contexts: {contexts}")
-            logging.info(f"Ground truth: {ground_truth}")
-
-            # Initialize results dictionary
-            metrics_dict = {}
-            
-            # Process results based on RAGAS version
-            if hasattr(results, 'scores'):
-                scores = results.scores
-                logging.info(f"RAGAS scores attribute: {scores}")
-                
-                if isinstance(scores, list) and len(scores) > 0:
-                    scores_dict = scores[0] if isinstance(scores[0], dict) else {}
-                    logging.info(f"Using scores from list: {scores_dict}")
-                    
-                    for metric in self._metrics:
-                        if metric in scores_dict:
-                            raw_value = float(scores_dict[metric])
-                            # Context metrics in RAGAS are usually already in 0-1 range where 1 is best
-                            if metric in ["context_precision", "context_recall"]:
-                                scaled_value = 1.0 + raw_value * 4.0
-                            else:
-                                scaled_value = 1.0 + raw_value * 4.0
-                            metrics_dict[metric] = round(scaled_value, 2)
-                        else:
-                            metrics_dict[metric] = 3.0  # Default middle value
-                
-                elif isinstance(scores, dict):
-                    logging.info(f"Using scores dict directly: {scores}")
-                    for metric in self._metrics:
-                        if metric in scores:
-                            raw_value = float(scores[metric])
-                            scaled_value = 1.0 + raw_value * 4.0
-                            metrics_dict[metric] = round(scaled_value, 2)
-                        else:
-                            metrics_dict[metric] = 3.0
-            
-            # As a last resort, try direct attributes
-            if not metrics_dict:
-                for metric in self._metrics:
-                    if hasattr(results, metric):
+            # RAGAS returns scores in a dictionary, typically with metric names as keys.
+            # These scores are usually between 0 and 1.
+            # We need to scale them to 1-5.
+            scaled_metrics_dict = {}
+            if isinstance(results, dict):
+                for metric_name, raw_score in results.items():
+                    if metric_name in self._ragas_metric_fns: # Ensure it's a metric we asked for
                         try:
-                            raw_value = float(getattr(results, metric))
-                            scaled_value = 1.0 + raw_value * 4.0
-                            metrics_dict[metric] = round(scaled_value, 2)
-                        except (ValueError, TypeError):
-                            metrics_dict[metric] = 3.0
-                    else:
-                        metrics_dict[metric] = 3.0
+                            scaled_value = 1.0 + (float(raw_score) * 4.0) # Scale 0-1 to 1-5
+                            scaled_metrics_dict[metric_name] = round(scaled_value, 2)
+                        except (ValueError, TypeError) as e:
+                            logging.warning(f"Could not parse or scale score for RAGAS metric '{metric_name}': {raw_score}. Error: {e}")
+                            scaled_metrics_dict[metric_name] = 3.0 # Default middle value on error
+            else:
+                logging.warning(f"RAGAS results were not in the expected dictionary format. Results: {results}")
+
+            if cost is not None and EvaluationMetricType.COST.value in self._metrics: # Check if cost was requested
+                scaled_metrics_dict[EvaluationMetricType.COST.value] = cost
             
-            # Log final metrics
-            logging.info(f"Final scaled metrics: {metrics_dict}")
-            
-            if cost is not None:
-                metrics_dict[EvaluationMetricType.COST.value] = cost
-            
-            return metrics_dict
+            logging.info(f"Final scaled RAGAS metrics: {scaled_metrics_dict}")
+            return scaled_metrics_dict
             
         except Exception as e:
-            import logging
+            logging.error(f"RAGAS evaluation error: {str(e)}")
+            import traceback
             logging.error(f"RAGAS evaluation error: {str(e)}")
             import traceback
             logging.error(traceback.format_exc())
@@ -1232,15 +900,16 @@ class RAGASEvaluatorV2(BaseEvaluator):
     @property
     def supported_metrics(self) -> List[str]:
         """Return list of metrics supported by this evaluator"""
-        return list(self._ragas_metrics.keys())
+        # Returns the RAGAS metrics this class can calculate
+        return list(self._ragas_metric_fns.keys())
     
     @property
     def name(self) -> str:
-        return "RAGAS Evaluator V2"
+        return "RAGAS Evaluator" # Renamed from RAGASEvaluatorV2
     
     @property
     def description(self) -> str:
-        return "Uses RAGAS framework to evaluate RAG system performance with improved result handling"
+        return "Uses RAGAS framework with metrics like faithfulness, answer_correctness, context_precision, and context_recall."
 
 class CustomEvaluator(BaseEvaluator):
     """Custom evaluator using a Claude model for evaluation"""
@@ -1249,12 +918,12 @@ class CustomEvaluator(BaseEvaluator):
         """Initialize the custom evaluator"""
         super().__init__(metrics)
         try:
-            if not os.environ.get("ANTHROPIC_API_KEY"):
+            if not utils.get_anthropic_api_key():
                 raise ValueError("ANTHROPIC_API_KEY environment variable not set. This is required for CustomEvaluator with Claude.")
 
             from langchain_anthropic import ChatAnthropic
             self._evaluator_model = ChatAnthropic(
-                model="claude-3-opus-20240229" 
+                model=DEFAULT_CLAUDE_OPUS_MODEL
                 # temperature=0.0 # For more deterministic outputs if needed
             )
         except ImportError:
@@ -1264,7 +933,7 @@ class CustomEvaluator(BaseEvaluator):
             self._evaluator_model = None
 
         if self._evaluator_model is None:
-            raise ValueError("Claude model (claude-3-opus-20240229) could not be initialized. Please check ANTHROPIC_API_KEY and langchain_anthropic installation.")
+            raise ValueError(f"Claude model ({DEFAULT_CLAUDE_OPUS_MODEL}) could not be initialized. Please check ANTHROPIC_API_KEY and langchain_anthropic installation.")
 
     def _parse_llm_response_to_list(self, response_content: str, item_type: str = "statement") -> List[str]:
         """Parses LLM response (expected to be a list of items) into a Python list of strings."""
@@ -1684,8 +1353,7 @@ class CustomEvaluator(BaseEvaluator):
 
         # Semantic similarity
         semantic_similarity = 0.0
-        prompt_template_semantic = ChatPromptTemplate.from_template(
-            """Rate the overall semantic similarity between the generated answer and the ground truth answer.
+        prompt_template_semantic_str = """Rate the overall semantic similarity between the generated answer and the ground truth answer.
             Consider if they convey the same meaning, even if the wording is different.
             Score on a scale from 0.0 (completely different meaning) to 1.0 (identical meaning).
             Provide only the numerical score.
@@ -1697,13 +1365,17 @@ class CustomEvaluator(BaseEvaluator):
             {answer}
 
             Semantic Similarity Score (0.0-1.0):"""
-        )
-        chain_semantic = prompt_template_semantic | self._evaluator_model
         try:
-            response_semantic = chain_semantic.invoke({"ground_truth": ground_truth, "answer": answer})
-            semantic_similarity = self._parse_llm_float_response(response_semantic.content, "answer_correctness semantic similarity")
+            semantic_similarity = _get_llm_evaluation_score(
+                self._evaluator_model,
+                prompt_template_semantic_str,
+                {"ground_truth": ground_truth, "answer": answer},
+                score_range=(0.0, 1.0),
+                default_score=0.0
+            )
         except Exception as e:
             print(f"Error calculating semantic similarity for answer_correctness: {e}")
+            semantic_similarity = 0.0 # Ensure it has a default on error
 
         # Weighted average (default weights: 0.5 for factual, 0.5 for semantic)
         factual_weight = 0.5
@@ -1740,14 +1412,14 @@ class EvaluatorFactory:
         """Create an evaluator based on backend type and metrics"""
         if backend_type == EvaluationBackendType.BUILTIN:
             return BuiltinEvaluator(metrics)
-        elif backend_type == EvaluationBackendType.RAGAS:
-            return RAGASEvaluator(metrics)
+        elif backend_type == EvaluationBackendType.RAGAS: # Updated to RAGAS
+            return RAGASEvaluator(metrics) # Now instantiates the new RAGASEvaluator
         elif backend_type == EvaluationBackendType.LANGSMITH:
             return LangSmithEvaluator(metrics)
         elif backend_type == EvaluationBackendType.DEEP_EVAL:
             return DeepEvaluator(metrics)
-        elif backend_type == EvaluationBackendType.RAGAS_V2:
-            return RAGASEvaluatorV2(metrics)
+        # elif backend_type == EvaluationBackendType.RAGAS_V2: # This entry is removed
+        #     return RAGASEvaluatorV2(metrics)
         elif backend_type == EvaluationBackendType.CUSTOM:
             return CustomEvaluator(metrics)
         else:
