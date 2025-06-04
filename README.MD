@@ -1,83 +1,159 @@
-# Configurable RAG System with Evaluation
+# Modular RAG Application
 
-This is a Streamlit application that allows you to build and evaluate a Retrieval-Augmented Generation (RAG) pipeline using different components and configurations. The application follows SOLID principles, making it easy to extend and modify.
+A modular and extensible Retrieval-Augmented Generation (RAG) application built with Streamlit. This application provides a flexible framework for implementing and evaluating different RAG configurations with various components.
 
-## Features
+## Project Overview
 
-- Upload text files for knowledge base creation
-- Select embedding models (OpenAI, Cohere)
-- Choose reranking models (Cohere)
-- Pick LLM models (OpenAI GPT-3.5/4, Google Gemini)
-- Configure vector store (FAISS)
-- Evaluate RAG performance with multiple metrics:
-  - Answer Relevance
-  - Context Relevance
-  - Groundedness
-  - Faithfulness
-
-## Installation
-
-1. Clone this repository:
-```bash
-git clone <repository-url>
-cd rag-evaluation-app
-```
-
-2. Install the required dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-## Running the Application
-
-1. Start the Streamlit app:
-```bash
-streamlit run app.py
-```
-
-2. Open your web browser and navigate to the URL displayed in the terminal (typically http://localhost:8501).
-
-## Usage Instructions
-
-1. **Upload a Knowledge Base**:
-   - Click "Browse files" in the sidebar to upload a .txt file that will serve as your knowledge base.
-
-2. **Configure Components**:
-   - Select your preferred embedding model, reranker, LLM, and vector store from the dropdown menus.
-   - Enter your API keys for OpenAI, Cohere, and/or Gemini as needed.
-   - Set the number of documents to retrieve using the slider.
-
-3. **Select Evaluation Metrics**:
-   - Check the evaluation metrics you want to use.
-
-4. **Enter a Query**:
-   - Type your question in the "Enter your question" text area.
-   - Optionally, provide a ground truth answer for evaluation.
-
-5. **Process the Query**:
-   - Click the "Process Query" button to execute the RAG pipeline.
-
-6. **Review Results**:
-   - The system will display the answer and retrieved contexts.
-   - If you provided a ground truth answer, evaluation metrics will be calculated and displayed.
-
-## Extending the Application
-
-The application is designed with SOLID principles, making it easy to add new components:
-
-- Add new embedding models by extending the `EmbeddingModel` class
-- Add new rerankers by extending the `Reranker` class
-- Add new vector stores by extending the `VectorStore` class
-- Add new LLM models by extending the `LLM` class
-
-Update the corresponding factory classes to make new components available in the UI.
+This project implements a modular RAG pipeline that allows users to:
+- Upload and process documents
+- Configure different components of the RAG pipeline
+- Chat with the processed documents
+- Evaluate different RAG configurations
+- Compare performance across different models and settings
 
 ## Project Structure
 
-- `app.py`: Main Streamlit application
-- `embedding_models.py`: Embedding model implementations and factory
-- `rerankers.py`: Reranker implementations and factory
-- `vector_stores.py`: Vector store implementations and factory
-- `llm_models.py`: LLM model implementations and factory
-- `evaluation.py`: RAG evaluation metrics
-- `rag_pipeline.py`: RAG pipeline implementation
+```
+├── pipeline/                # Pipeline related files
+│   ├── rag_pipeline.py     # Main pipeline implementation
+│   ├── pipeline_manager.py # Pipeline configuration
+│   └── pipeline_utils.py   # Pipeline utilities
+│
+├── models/                  # All model implementations
+│   ├── embeddings.py       # Embedding models
+│   ├── llms.py            # Language models
+│   ├── rerankers.py       # Reranking models
+│   └── vector_stores.py   # Vector stores
+│
+├── ui/                     # User interface
+│   ├── components.py      # UI components
+│   └── sidebar.py         # Settings panel
+│
+├── utils/                  # Utility functions
+│   ├── config.py          # Configuration
+│   ├── evaluation.py      # Evaluation framework
+│   └── tokenizer.py       # Token utilities
+│
+├── tests/                  # Test suite
+├── data/                   # Data directory
+├── examples/               # Example scripts
+├── app.py                  # Main application
+└── requirements.txt        # Dependencies
+```
+
+## Core Components
+
+### 1. RAG Pipeline (`rag_pipeline.py`)
+- Implements the core RAG functionality
+- Handles document processing, embedding, retrieval, and generation
+- Supports multiple embedding models, vector stores, and LLMs
+
+### 2. Pipeline Manager (`pipeline_manager.py`)
+- Manages pipeline configurations and component initialization
+- Handles component registration and dependency management
+- Provides interface for pipeline customization
+
+### 3. UI Components (`ui_components.py`)
+- Implements the chat interface
+- Provides document upload functionality
+- Displays evaluation results and metrics
+
+### 4. Models and Stores
+- **Embedding Models** (`embedding_models.py`): Various embedding model implementations
+- **Vector Stores** (`vector_stores.py`): Different vector database implementations
+- **LLM Models** (`llm_models.py`): Language model implementations
+- **Rerankers** (`rerankers.py`): Document reranking implementations
+
+### 5. Evaluation Framework (`evaluator.py`)
+- Implements evaluation metrics and methodologies
+- Supports comparison of different RAG configurations
+- Provides detailed performance analysis
+
+## Configuration
+
+The application can be configured through:
+1. Environment variables (`.env` file)
+2. UI settings panel
+3. Default configurations in `subject_configs.py`
+
+Key configuration options include:
+- Embedding model selection
+- Vector store selection
+- LLM model selection
+- Chunking strategy and parameters
+- Reranking model selection
+- Hybrid search parameters
+
+## Dependencies
+
+Key dependencies include:
+- Streamlit for the web interface
+- LangChain for RAG pipeline components
+- Various embedding models (OpenAI, Cohere, etc.)
+- Vector stores (FAISS, Milvus)
+- LLM providers (OpenAI, Anthropic, Google, Mistral)
+- Text processing libraries (sentence-transformers, tiktoken)
+
+## Getting Started
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Set up environment variables in `.env` file
+4. Run the application:
+   ```bash
+   streamlit run app.py
+   ```
+
+## Usage
+
+1. **Document Processing**
+   - Upload documents through the UI
+   - Configure processing parameters
+   - Monitor processing status
+
+2. **Chat Interface**
+   - Interact with processed documents
+   - View source contexts
+   - Adjust retrieval parameters
+
+3. **Evaluation**
+   - Compare different configurations
+   - View performance metrics
+   - Export evaluation results
+
+## Development
+
+### Adding New Components
+
+1. **New Embedding Model**
+   - Implement in `embedding_models.py`
+   - Register in pipeline manager
+   - Add to configuration options
+
+2. **New Vector Store**
+   - Implement in `vector_stores.py`
+   - Add connection handling
+   - Update configuration options
+
+3. **New LLM**
+   - Implement in `llm_models.py`
+   - Add API integration
+   - Update configuration options
+
+### Testing
+
+Run tests using:
+```bash
+python -m pytest tests/
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Implement changes
+4. Add tests
+5. Submit pull request

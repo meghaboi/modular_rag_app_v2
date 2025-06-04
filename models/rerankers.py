@@ -2,10 +2,10 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Tuple, Optional
 import os
 import logging
-from enums import RerankerModelType
+from utils.enums import RerankerModelType
 import requests
-from llm_models import StreamingLLM 
-from llm_models import ClaudeLLM 
+from models.llm_models import StreamingLLM 
+from models.llm_models import ClaudeLLM 
 import json 
 
 class Reranker(ABC):

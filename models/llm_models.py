@@ -7,7 +7,7 @@ from anthropic import Anthropic
 from mistralai.client import MistralClient 
 from mistralai.models import UserMessage, SystemMessage
 
-from enums import LLMModelType
+from utils.enums import LLMModelType
 
 class StreamingLLM(ABC):
     """Abstract base class for streaming LLM models"""

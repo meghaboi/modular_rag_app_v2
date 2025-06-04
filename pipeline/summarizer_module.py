@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
-from llm_models import StreamingLLM # Assuming llm_models.py is in the same directory or accessible
-from rag_pipeline import RAGPipeline # Assuming rag_pipeline.py is accessible
+from models.llm_models import StreamingLLM # Assuming llm_models.py is in the same directory or accessible
+from pipeline.rag_pipeline import RAGPipeline # Assuming rag_pipeline.py is accessible
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)

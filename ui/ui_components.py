@@ -3,18 +3,18 @@ import logging
 import time
 import itertools
 from typing import List, Dict, Any
-from utils import text_to_speech, is_greeting, check_api_keys, get_csv_download_link
-from subject_handler import update_rag_configuration # Modified import
-from pipeline_utils import initialize_pipeline
-from enums import (
+from utils.utils import text_to_speech, is_greeting, check_api_keys, get_csv_download_link
+from pipeline.subject_handler import update_rag_configuration
+from pipeline.pipeline_utils import initialize_pipeline
+from utils.enums import (
     EmbeddingModelType,
     RerankerModelType,
     LLMModelType,
     VectorStoreType,
     ChunkingStrategyType
 )
-from pipeline_utils import run_all_permutations
-from token_utils import TokenCostManager
+from pipeline.pipeline_utils import run_all_permutations
+from utils.token_utils import TokenCostManager
 from datetime import datetime
 
 def display_chat_interface():
@@ -351,7 +351,7 @@ def display_evaluation_interface():
                     start_eval_time = time.time()
                     try: 
                         print(user_query)
-                        response, contexts, metrics = st.session_state.pipeline.process_query(user_query)
+                        response, contexts, metrics = st.session_state.pipeline.run(user_query)
                         eval_elapsed_time = time.time() - start_eval_time
 
                         evaluation_results = {}

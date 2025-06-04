@@ -9,7 +9,7 @@ from openai import OpenAI
 from anthropic import Anthropic
 import random
 from PyPDF2 import PdfReader
-from enums import (
+from utils.enums import (
     EmbeddingModelType,
     RerankerModelType,
     LLMModelType,

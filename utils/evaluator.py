@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate # Added for creating prompts
 from langchain_google_genai import ChatGoogleGenerativeAI # Added for Gemini model
 
-from enums import EvaluationBackendType, EvaluationMetricType
+from utils.enums import EvaluationBackendType, EvaluationMetricType
 
 class BaseEvaluator(ABC):
     """Abstract base class for RAG evaluators"""

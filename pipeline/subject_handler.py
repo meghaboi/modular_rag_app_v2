@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional
 import openai
 import streamlit as st
-from subject_configs import (
+from utils.subject_configs import (
     SubjectConfig, 
     get_subject_config,
     DEFAULT_CHUNK_SIZE,
@@ -9,16 +9,16 @@ from subject_configs import (
     DEFAULT_TOP_K,
     DEFAULT_HYBRID_ALPHA
 )
-from pipeline_utils import initialize_pipeline
+from pipeline.pipeline_utils import initialize_pipeline
 import logging
-from enums import (
+from utils.enums import (
     EmbeddingModelType,
     RerankerModelType,
     LLMModelType,
     VectorStoreType,
     ChunkingStrategyType
 )
-from utils import determine_prompt_nature # Added import
+from utils.utils import determine_prompt_nature # Added import
 
 def get_subject_configuration(subject: str, query: str) -> Dict[str, Any]:
     """

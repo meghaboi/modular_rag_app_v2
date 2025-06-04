@@ -7,17 +7,17 @@ import itertools
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
-from enums import (
+from utils.enums import (
     EmbeddingModelType, RerankerModelType, LLMModelType, VectorStoreType,
     ChunkingStrategyType
 )
-from embedding_models import EmbeddingModelFactory
-from rerankers import RerankerFactory
-from vector_stores import VectorStoreFactory
-from llm_models import LLMFactory
-from rag_pipeline import RAGPipeline, ChunkingStrategyFactory
-from config import check_api_keys
-from subject_configs import DEFAULT_EMBEDDING_MODEL
+from models.embedding_models import EmbeddingModelFactory
+from models.rerankers import RerankerFactory
+from models.vector_stores import VectorStoreFactory
+from models.llm_models import LLMFactory
+from pipeline.rag_pipeline import RAGPipeline, ChunkingStrategyFactory
+from utils.utils import check_api_keys
+from utils.subject_configs import DEFAULT_EMBEDDING_MODEL
 
 class PipelineException(Exception):
     """Base exception class for pipeline-related errors"""

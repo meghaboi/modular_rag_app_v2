@@ -1,8 +1,8 @@
 from typing import List, Dict, Any, Optional, Tuple, Callable
-from embedding_models import EmbeddingModel
-from rerankers import Reranker
-from vector_stores import VectorStore
-from llm_models import StreamingLLM
+from models.embedding_models import EmbeddingModel
+from models.rerankers import Reranker
+from models.vector_stores import VectorStore
+from models.llm_models import StreamingLLM
 import re
 from abc import ABC, abstractmethod
 
@@ -10,7 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from rank_bm25 import BM25Okapi
 import numpy as np  
-from token_utils import TokenCounter, TokenCostManager
+from utils.token_utils import TokenCounter, TokenCostManager
 import logging
 import time
 from dataclasses import dataclass
@@ -754,8 +754,8 @@ class RAGPipeline:
             RAGPipelineEvaluationError: If evaluation fails
         """
         try:
-            from evaluator import EvaluatorFactory
-            from enums import EvaluationBackendType, EvaluationMetricType
+            from utils.evaluator import EvaluatorFactory
+            from utils.enums import EvaluationBackendType, EvaluationMetricType
             
             # Use RAGAS_V2 for consistency with permutation evaluations
             evaluator = EvaluatorFactory.create_evaluator(

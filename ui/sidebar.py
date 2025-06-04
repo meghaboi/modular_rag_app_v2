@@ -1,7 +1,7 @@
 import streamlit as st
 import logging
 import os
-from subject_configs import (
+from utils.subject_configs import (
     SUBJECT_CONFIGS,
     get_subject_config,
     DEFAULT_EMBEDDING_MODEL,
@@ -14,22 +14,22 @@ from subject_configs import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_TOP_K
 )
-from subject_handler import update_rag_configuration
-from pipeline_utils import initialize_pipeline
-from enums import (
+from pipeline.subject_handler import update_rag_configuration
+from pipeline.pipeline_utils import initialize_pipeline
+from utils.enums import (
     EmbeddingModelType,
     RerankerModelType,
     LLMModelType,
     VectorStoreType,
     ChunkingStrategyType
 )
-from utils import save_uploaded_file, check_api_keys
-from embedding_models import EmbeddingModelFactory
-from vector_stores import VectorStoreFactory
-from rerankers import RerankerFactory
-from llm_models import LLMFactory
-from rag_pipeline import RAGPipeline, ChunkingStrategyFactory
-from summarizer_module import extract_main_points, generate_summary_for_point
+from utils.utils import save_uploaded_file, check_api_keys
+from models.embedding_models import EmbeddingModelFactory
+from models.vector_stores import VectorStoreFactory
+from models.rerankers import RerankerFactory
+from models.llm_models import LLMFactory
+from pipeline.rag_pipeline import RAGPipeline, ChunkingStrategyFactory
+from pipeline.summarizer_module import extract_main_points, generate_summary_for_point
 # LLMModelType is already imported from enums
 # from dotenv import load_dotenv # Typically handled in app.py if needed globally
 

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Tuple
 import numpy as np
-from enums import VectorStoreType
+from utils.enums import VectorStoreType
 import logging
 import os
 
@@ -528,13 +528,13 @@ class VectorStoreFactory:
     def create_store(store_name: str, **kwargs) -> 'VectorStore':
         """Create a vector store based on the store name"""
         if store_name == VectorStoreType.FAISS:
-            from vector_stores import FAISSVectorStore
+            from models.vector_stores import FAISSVectorStore
             return FAISSVectorStore()
         elif store_name == VectorStoreType.CHROMA:
-            from vector_stores import ChromaVectorStore
+            from models.vector_stores import ChromaVectorStore
             return ChromaVectorStore()
         elif store_name == VectorStoreType.MILVUS:
-            from vector_stores import MilvusVectorStore
+            from models.vector_stores import MilvusVectorStore
             return MilvusVectorStore()
         elif store_name == VectorStoreType.HYBRID:
             alpha = kwargs.get('alpha', 0.5)

@@ -6,7 +6,7 @@ import os
 import csv
 import streamlit as st
 from typing import Dict, Any, List, Tuple
-from enums import (
+from utils.enums import (
     EmbeddingModelType,
     RerankerModelType,
     LLMModelType,
@@ -15,16 +15,13 @@ from enums import (
     EvaluationBackendType,
     EvaluationMetricType
 )
-from utils import check_api_keys
-from embedding_models import EmbeddingModelFactory
-from vector_stores import VectorStoreFactory
-from rerankers import RerankerFactory
-from llm_models import LLMFactory
-from evaluator import EvaluatorFactory
-# Assuming ChunkingStrategyFactory might be in rag_pipeline or needs to be created/found.
-# For now, I will comment it out if it's not directly available.
-# from chunking_factory import ChunkingStrategyFactory # Placeholder
-from rag_pipeline import RAGPipeline, ChunkingStrategyFactory # If ChunkingStrategyFactory is in rag_pipeline.py
+from utils.utils import check_api_keys
+from models.embedding_models import EmbeddingModelFactory
+from models.vector_stores import VectorStoreFactory
+from models.rerankers import RerankerFactory
+from models.llm_models import LLMFactory
+from utils.evaluator import EvaluatorFactory
+from pipeline.rag_pipeline import RAGPipeline, ChunkingStrategyFactory
 
 def initialize_pipeline(file_path, embedding_model_enum, vector_store_enum, reranker_enum, llm_enum,
                         chunking_strategy_enum, hybrid_alpha, chunk_size, chunk_overlap, top_k):

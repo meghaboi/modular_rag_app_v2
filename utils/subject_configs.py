@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from dataclasses import dataclass
-from enums import (
+from utils.enums import (
     EmbeddingModelType,
     RerankerModelType,
     LLMModelType,

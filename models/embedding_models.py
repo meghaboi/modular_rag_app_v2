@@ -6,7 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from mistralai import Mistral
 import tiktoken  # For token counting
-from enums import EmbeddingModelType
+from utils.enums import EmbeddingModelType
 import requests
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
