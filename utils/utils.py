@@ -26,23 +26,18 @@ def save_uploaded_file(uploaded_file):
             temp_path = temp.name
             logging.info(f"Saved uploaded file '{uploaded_file.name}' to temporary path: {temp_path}")
             
-            # If it's a PDF file, convert it to text
             if file_suffix.lower() == '.pdf':
                 try:
-                    # Create a new temporary file for the text content
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as text_temp:
-                        # Read the PDF and extract text
                         pdf_reader = PdfReader(temp_path)
                         text_content = ""
                         for page in pdf_reader.pages:
                             text_content += page.extract_text() + "\n"
                         
-                        # Write the extracted text to the new temporary file
                         text_temp.write(text_content.encode('utf-8'))
                         text_temp_path = text_temp.name
                     
-                    # Close the PDF reader and delete the original PDF temporary file
-                    pdf_reader = None  # Release the file handle
+                    pdf_reader = None
                     try:
                         os.unlink(temp_path)
                         logging.info(f"Converted PDF to text and saved to: {text_temp_path}")
@@ -71,7 +66,6 @@ def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_e
     api_keys_status = {}
     missing_keys_list = []
 
-    # Determine required keys based on selections
     openai_needed = (embedding_model_enum == EmbeddingModelType.OPENAI or
                      llm_enum in [LLMModelType.OPENAI_GPT35, LLMModelType.OPENAI_GPT4] or
                      True) # OpenAI TTS always needs it
@@ -85,7 +79,6 @@ def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_e
     voyage_needed = (embedding_model_enum == EmbeddingModelType.VOYAGE or
                      reranker_enum in [RerankerModelType.VOYAGE, RerankerModelType.VOYAGE_2])
 
-    # Check and record status
     if openai_needed:
         key_name = "OpenAI API Key"
         is_available = bool(os.getenv("OPENAI_API_KEY"))
@@ -172,7 +165,6 @@ def is_greeting(query: str) -> tuple[bool, str]:
     try:
         client = Anthropic()
         
-        # Define the function for greeting detection
         greeting_function = {
             "name": "detect_greeting",
             "description": "Detect if the input text is a greeting or small talk and provide a friendly response",
@@ -196,7 +188,6 @@ def is_greeting(query: str) -> tuple[bool, str]:
             }
         }
 
-        # Call Anthropic with function calling
         response = client.messages.create(
             model="claude-3-sonnet-20240229",
             max_tokens=1024,
@@ -207,7 +198,6 @@ def is_greeting(query: str) -> tuple[bool, str]:
             tools=[greeting_function]
         )
 
-        # Extract the function call result
         tool_calls = [content for content in response.content if content.type == "tool_use"]
         if tool_calls:
             result = tool_calls[0].input
@@ -215,7 +205,6 @@ def is_greeting(query: str) -> tuple[bool, str]:
             confidence = result.get("confidence", 0.0)
             greeting_response = result.get("response", "")
             
-            # Only consider it a greeting if confidence is high enough
             return (is_greeting and confidence > 0.7, greeting_response)
             
         return (False, "")

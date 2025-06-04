@@ -5,7 +5,7 @@ import random
 import logging
 from abc import ABC, abstractmethod
 from mistralai import Mistral
-import tiktoken  # For token counting
+import tiktoken
 from utils.enums import EmbeddingModelType
 import requests
 

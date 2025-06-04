@@ -21,14 +21,12 @@ DEFAULT_CHUNK_OVERLAP = 50
 DEFAULT_TOP_K = 3
 DEFAULT_HYBRID_ALPHA = 0.5
 
-# Use Mistral as the fixed embedding model
 DEFAULT_EMBEDDING_MODEL = EmbeddingModelType.MISTRAL
 DEFAULT_VECTOR_STORE = VectorStoreType.CHROMA
 DEFAULT_RERANKER_MODEL = RerankerModelType.VOYAGE_2
 DEFAULT_LLM_MODEL = LLMModelType.CLAUDE_37_SONNET
 DEFAULT_CHUNKING_STRATEGY = ChunkingStrategyType.HIERARCHICAL
 
-# Subject-specific configurations - only varying chunking and search parameters
 SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
     "general": SubjectConfig(
         chunk_size=DEFAULT_CHUNK_SIZE,
@@ -37,10 +35,10 @@ SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
         hybrid_alpha=DEFAULT_HYBRID_ALPHA
     ),
     "mathematics": SubjectConfig(
-        chunk_size=200,  # Smaller chunks for precise mathematical content
-        chunk_overlap=50,  # Higher overlap to maintain context
-        top_k=2,  # More documents for comprehensive coverage
-        hybrid_alpha=0.7  # Higher vector weight for mathematical precision
+        chunk_size=200,
+        chunk_overlap=50,
+        top_k=2,
+        hybrid_alpha=0.7
     ),
     "science": SubjectConfig(
         chunk_size=400,
@@ -49,10 +47,10 @@ SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
         hybrid_alpha=0.6
     ),
     "history": SubjectConfig(
-        chunk_size=600,  # Larger chunks for narrative context
+        chunk_size=600,
         chunk_overlap=100,
         top_k=5,
-        hybrid_alpha=0.4  # Lower vector weight for more keyword matching
+        hybrid_alpha=0.4
     ),
     "literature": SubjectConfig(
         chunk_size=500,
@@ -61,10 +59,10 @@ SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
         hybrid_alpha=0.5
     ),
     "computer_science": SubjectConfig(
-        chunk_size=350,  # Smaller chunks for code and technical content
+        chunk_size=350,
         chunk_overlap=75,
         top_k=4,
-        hybrid_alpha=0.7  # Higher vector weight for technical precision
+        hybrid_alpha=0.7
     ),
     "medicine": SubjectConfig(
         chunk_size=450,
@@ -73,10 +71,10 @@ SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
         hybrid_alpha=0.6
     ),
     "law": SubjectConfig(
-        chunk_size=550,  # Larger chunks for legal context
+        chunk_size=550,
         chunk_overlap=100,
         top_k=5,
-        hybrid_alpha=0.4  # Lower vector weight for more keyword matching
+        hybrid_alpha=0.4
     ),
     "question_answering": SubjectConfig(
         chunk_size=256,

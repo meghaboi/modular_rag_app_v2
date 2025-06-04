@@ -268,7 +268,7 @@ class ModelCombination:
     def from_config(cls, config: PipelineConfig) -> 'ModelCombination':
         """Create a ModelCombination from a PipelineConfig"""
         return cls(
-            embedding_model=DEFAULT_EMBEDDING_MODEL,  # Using default as it's fixed
+            embedding_model=DEFAULT_EMBEDDING_MODEL,
             vector_store=config.vector_store_type,
             reranker=config.reranker_type,
             llm=config.llm_type

@@ -11,16 +11,13 @@ from utils.subject_configs import (
 )
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-# Initialize session state variables
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 if 'pipeline' not in st.session_state:
@@ -40,7 +37,6 @@ if 'permutation_df' not in st.session_state:
 if 'api_key_status' not in st.session_state:
     st.session_state.api_key_status = None
 
-# Set default configuration values
 if 'embedding_model' not in st.session_state:
     st.session_state.embedding_model = DEFAULT_EMBEDDING_MODEL.value
 if 'vector_store' not in st.session_state:
@@ -61,10 +57,8 @@ if 'top_k' not in st.session_state:
     st.session_state.top_k = DEFAULT_TOP_K
 
 def main():
-    # Display settings panel in sidebar
     display_settings_panel()
 
-    # Main content area
     if st.session_state.mode == "chat":
         display_chat_interface()
     else:

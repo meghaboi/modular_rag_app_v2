@@ -2,11 +2,11 @@
 from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
 import os
-import re # Added for parsing LLM responses
-import json # Added for parsing LLM responses that might be JSON
+import re
+import json
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate # Added for creating prompts
-from langchain_google_genai import ChatGoogleGenerativeAI # Added for Gemini model
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from utils.enums import EvaluationBackendType, EvaluationMetricType
 
@@ -40,7 +40,6 @@ class BaseEvaluator(ABC):
     def description(self) -> str:
         """Return a description of the evaluator"""
         pass
-
 
 class BuiltinEvaluator(BaseEvaluator):
     """Built-in evaluator using LLM for evaluation"""
@@ -1730,7 +1729,6 @@ class CustomEvaluator(BaseEvaluator):
     @property
     def description(self) -> str:
         return "Evaluator using a Claude model for Context Recall, Answer Relevancy, Context Precision, Faithfulness, and Answer Correctness."
-
 
 class EvaluatorFactory:
     """Factory for creating evaluators"""

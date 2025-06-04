@@ -356,8 +356,7 @@ class RerankerFactory:
             return JinaReranker(model_name="jina-colbert-v2")
         elif reranker_name == RerankerModelType.LLM:
             if not llm_client:
-                 # Default to ClaudeLLM if no client is provided
-                llm_client = ClaudeLLM(model_name="claude-3-7-sonnet-20240708") # Use ClaudeLLM
+                llm_client = ClaudeLLM(model_name="claude-3-7-sonnet-20240708")
             return LLMReranker(llm_client=llm_client)
         else:
             raise ValueError(f"Unsupported reranker: {reranker_name}")
