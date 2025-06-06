@@ -1,5 +1,4 @@
 from typing import Dict, Any, Optional
-import openai
 import streamlit as st
 from utils.subject_configs import (
     SubjectConfig, 

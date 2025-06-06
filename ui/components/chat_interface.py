@@ -1,8 +1,9 @@
 import streamlit as st
 import logging
 import time
-from typing import Dict, Any
-from .shared import display_message_with_audio, text_to_speech, is_greeting, update_rag_configuration
+from .shared import (display_message_with_audio)
+from utils.utils import text_to_speech, is_greeting
+from pipeline.subject_handler import update_rag_configuration
 
 def display_chat_interface():
     """Display the main chat interface for interacting with JEFF."""
@@ -178,4 +179,4 @@ def process_query_with_pipeline(user_query: str):
             })
             
         except Exception as e:
-            handle_query_error(e) 
+            print(e)

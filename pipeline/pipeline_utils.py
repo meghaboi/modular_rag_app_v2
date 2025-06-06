@@ -21,7 +21,8 @@ from models.vector_stores import VectorStoreFactory
 from models.rerankers import RerankerFactory
 from models.llm_models import LLMFactory
 from utils.evaluator import EvaluatorFactory
-from pipeline.rag_pipeline import RAGPipeline, ChunkingStrategyFactory
+from pipeline.rag_pipeline import RAGPipeline
+from models.chunking_strategies import ChunkingStrategyFactory
 
 def initialize_pipeline(file_path, embedding_model_enum, vector_store_enum, reranker_enum, llm_enum,
                         chunking_strategy_enum, hybrid_alpha, chunk_size, chunk_overlap, top_k):
@@ -136,7 +137,7 @@ def run_pipeline_with_config(
 
         # Process query
         start_query_time = time.time()
-        response, contexts, metrics = pipeline.process_query(user_query)
+        response, contexts, metrics = pipeline.run(user_query)
         query_elapsed_time = time.time() - start_query_time
         logging.info(f"Query processed in {query_elapsed_time:.2f}s. Response length: {len(response)}")
 

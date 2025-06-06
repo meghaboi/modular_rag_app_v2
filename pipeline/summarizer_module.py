@@ -1,5 +1,6 @@
 import logging
 from typing import List, Optional
+from sympy import re
 from models.llm_models import StreamingLLM
 from pipeline.rag_pipeline import RAGPipeline
 

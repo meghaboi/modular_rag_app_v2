@@ -4,11 +4,9 @@ import time
 import itertools
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
-from .shared import (
-    check_api_keys, get_csv_download_link, run_all_permutations,
-    EmbeddingModelType, RerankerModelType, LLMModelType,
-    VectorStoreType, ChunkingStrategyType
-)
+from pipeline.pipeline_utils import run_all_permutations
+from utils.utils import check_api_keys, get_csv_download_link, EmbeddingModelType, \
+    RerankerModelType, LLMModelType, VectorStoreType, ChunkingStrategyType
 
 def display_evaluation_interface():
     """Display the RAG evaluation interface."""
@@ -289,4 +287,4 @@ def display_permutation_results():
 
     st.markdown("---")
     st.subheader("Explore Individual Results")
-    display_individual_results() 
+    # display_individual_results()

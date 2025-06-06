@@ -15,8 +15,8 @@ from models.embedding_models import EmbeddingModelFactory
 from models.rerankers import RerankerFactory
 from models.vector_stores import VectorStoreFactory
 from models.llm_models import LLMFactory
-from pipeline.rag_pipeline import RAGPipeline, ChunkingStrategyFactory
-from utils.utils import check_api_keys
+from pipeline.rag_pipeline import RAGPipeline, PipelineMetrics
+from models.chunking_strategies import ChunkingStrategyFactory
 from utils.subject_configs import DEFAULT_EMBEDDING_MODEL
 
 class PipelineException(Exception):
@@ -80,7 +80,7 @@ class PipelineConfig:
             vector_store_type=VectorStoreType.CHROMA,
             reranker_type=RerankerModelType.NONE,
             llm_type=LLMModelType.CLAUDE_37_SONNET,
-            chunking_strategy_type=ChunkingStrategyType.SIMPLE
+            chunking_strategy_type=ChunkingStrategyType.PARAGRAPH
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -142,29 +142,6 @@ class PipelineConfig:
             top_k=self.top_k,
             evaluation_mode=self.evaluation_mode
         )
-
-@dataclass
-class PipelineMetrics:
-    """Metrics for pipeline execution"""
-    total_time: float
-    input_tokens: int
-    output_tokens: int
-    total_tokens: int
-    llm_cost: float
-    ragas_scores: Optional[Dict[str, float]] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert metrics to dictionary"""
-        metrics_dict = {
-            "total_time": self.total_time,
-            "input_tokens": self.input_tokens,
-            "output_tokens": self.output_tokens,
-            "total_tokens": self.total_tokens,
-            "llm_cost": self.llm_cost
-        }
-        if self.ragas_scores:
-            metrics_dict.update(self.ragas_scores)
-        return metrics_dict
 
 @dataclass
 class PipelineResult:
@@ -419,14 +396,14 @@ class PipelineManager:
             else:
                 evaluation_metrics = metrics_from_run
 
-            # Create metrics object
+            # Create a metrics object
             metrics = PipelineMetrics(
                 total_time=evaluation_metrics.get("total_time", 0.0),
                 input_tokens=evaluation_metrics.get("input_tokens", 0),
                 output_tokens=evaluation_metrics.get("output_tokens", 0),
                 total_tokens=evaluation_metrics.get("total_tokens", 0),
                 llm_cost=evaluation_metrics.get("llm_cost", 0.0),
-                ragas_scores={k: v for k, v in evaluation_metrics.items() 
+                evaluation_scores={k: v for k, v in evaluation_metrics.items()
                             if k not in ["total_time", "input_tokens", "output_tokens", 
                                        "total_tokens", "llm_cost"]}
             )
