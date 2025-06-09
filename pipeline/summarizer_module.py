@@ -3,6 +3,7 @@ from typing import List, Optional
 from sympy import re
 from models.llm_models import StreamingLLM
 from pipeline.rag_pipeline import RAGPipeline
+from prompts import get_provider
 
 # Configure logging for this module 
 logger = logging.getLogger(__name__)
@@ -34,18 +35,13 @@ def extract_main_points(file_path: str, llm: StreamingLLM) -> List[str]:
         logger.warning(f"File {file_path} is empty or contains only whitespace.")
         return []
 
-    user_prompt_for_extraction = (
-        "Please extract the key topics or main points from the following text. "
-        "Present them as a numbered list (e.g., 1. Point one, 2. Point two, ...).\n\n"
-        "Text:\n"
-        f"{file_content}"
-    )
-
+    summarizer_provider = get_provider('summarizer')
+    user_prompt = summarizer_provider.get_prompt('main_points', text=file_content)
     extraction_system_prompt = "You are a helpful assistant tasked with extracting key information."
 
     try:
         response_text, _ = llm.generate(
-            prompt=user_prompt_for_extraction,
+            prompt=user_prompt,
             context=None,
             system_prompt_override=extraction_system_prompt
         )

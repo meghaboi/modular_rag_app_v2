@@ -2,8 +2,6 @@ import streamlit as st
 import logging
 from ui.ui_components import display_chat_interface, display_evaluation_interface
 from ui.sidebar import display_settings_panel
-from utils.utils import check_api_keys
-from pipeline.pipeline_utils import initialize_pipeline
 from utils.subject_configs import (
     DEFAULT_EMBEDDING_MODEL, DEFAULT_VECTOR_STORE, DEFAULT_RERANKER_MODEL,
     DEFAULT_LLM_MODEL, DEFAULT_CHUNKING_STRATEGY, DEFAULT_HYBRID_ALPHA,

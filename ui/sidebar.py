@@ -14,8 +14,8 @@ from utils.subject_configs import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_TOP_K
 )
-from pipeline.subject_handler import update_rag_configuration
-from pipeline.pipeline_utils import initialize_pipeline
+from pipeline.nature_handling import update_rag_configuration
+from pipeline.utils.pipeline_initializer import PipelineInitializer
 from utils.enums import (
     EmbeddingModelType,
     RerankerModelType,
@@ -23,7 +23,8 @@ from utils.enums import (
     VectorStoreType,
     ChunkingStrategyType
 )
-from utils.utils import save_uploaded_file, check_api_keys
+from utils.file_handling.file_utils import save_uploaded_file
+from utils.api_management.api_utils import check_api_keys
 from models.embedding_models import EmbeddingModelFactory
 from models.vector_stores import VectorStoreFactory
 from models.rerankers import RerankerFactory
@@ -31,6 +32,7 @@ from models.llm_models import LLMFactory
 from pipeline.rag_pipeline import RAGPipeline
 from models.chunking_strategies import ChunkingStrategyFactory
 from pipeline.summarizer_module import extract_main_points, generate_summary_for_point
+from prompts import get_provider
 
 def display_settings_panel():
     if "main_points" not in st.session_state:
@@ -189,11 +191,8 @@ def display_settings_panel():
             if not st.session_state.get("pipeline"):
                 st.sidebar.error("JEFF is not initialized. Please initialize JEFF first from the settings below.")
             else:
-                summarization_system_prompt = (
-                    f"You are an expert summarizer. Based on the provided context from a larger document, "
-                    f"generate a concise summary focusing on the topic: '{selected_point}'. "
-                    "Highlight the most important information related to this specific topic within the given context."
-                )
+                summarizer_provider = get_provider('summarizer')
+                summarization_system_prompt = summarizer_provider.get_prompt('point_summary', topic=selected_point)
                 with st.spinner(f"Summarizing '{selected_point}'..."):
                     summary_text = generate_summary_for_point(
                         selected_point,
@@ -446,7 +445,7 @@ def display_settings_panel():
             st.sidebar.error(f"Cannot initialize. Missing keys: {', '.join(missing_keys)}", icon="🔑")
         else:
             with st.spinner("Warming up JEFF's brain..."):
-                pipeline_instance = initialize_pipeline(
+                pipeline_instance = PipelineInitializer.initialize_pipeline(
                     embedding_model=embedding_model,
                     vector_store=vector_store,
                     reranker=reranker,

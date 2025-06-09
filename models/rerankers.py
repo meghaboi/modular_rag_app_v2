@@ -7,6 +7,7 @@ import requests
 from models.llm_models import StreamingLLM 
 from models.llm_models import ClaudeLLM 
 import json 
+from prompts import get_provider
 
 class Reranker(ABC):
     """Abstract base class for rerankers following Interface Segregation Principle"""
@@ -265,23 +266,11 @@ class LLMReranker(Reranker):
             return []
 
         try:
-            # Construct a prompt for the LLM
-            prompt = f"Query: {query}\\n\\nDocuments to rerank (original indices provided):\\n"
-            for i, doc in enumerate(documents):
-                prompt += f"Index {i}: {doc}\\n" # Provide original index clearly
-            prompt += """\\nPlease rerank the documents above based on their relevance to the query.
-                Return a JSON string representing a list of objects, where each object has two keys: 'document_index' (the original index of the document as provided above) and 'relevance_score' (a float between 0.0 and 1.0, where 1.0 is most relevant).
-                The list should be sorted by relevance_score in descending order.
+            # Get prompt from provider
+            reranker_provider = get_provider('reranker')
+            prompt = reranker_provider.get_prompt('rerank', query=query, documents=documents)
 
-                Example JSON output:
-                [
-                {"document_index": 2, "relevance_score": 0.95},
-                {"document_index": 0, "relevance_score": 0.88},
-                {"document_index": 1, "relevance_score": 0.75}
-                ]
-                """
-
-            response_text = self._llm_client.generate(prompt, context="", model_name=self._model_name) # Pass model_name
+            response_text = self._llm_client.generate(prompt, context="", model_name=self._model_name)
             
             # Parse the LLM's JSON response
             try:

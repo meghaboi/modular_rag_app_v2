@@ -8,7 +8,7 @@ from utils.subject_configs import (
     DEFAULT_TOP_K,
     DEFAULT_HYBRID_ALPHA
 )
-from pipeline.pipeline_utils import initialize_pipeline
+from pipeline.utils.pipeline_initializer import PipelineInitializer
 import logging
 from utils.enums import (
     EmbeddingModelType,
@@ -17,15 +17,7 @@ from utils.enums import (
     VectorStoreType,
     ChunkingStrategyType
 )
-from utils.utils import determine_prompt_nature # Added import
-
-def get_subject_configuration(subject: str, query: str) -> Dict[str, Any]:
-    """
-    Get the optimal RAG configuration for a specific subject using OpenAI's function calling API.
-    Falls back to predefined configurations if API call fails.
-    THIS FUNCTION IS DEPRECATED.
-    """
-    raise NotImplementedError("This function is deprecated. Use get_config_by_prompt_nature instead.")
+from utils.analysis.analysis_utils import determine_prompt_nature # Added import
 
 def get_config_by_prompt_nature(query: str) -> SubjectConfig:
     """
@@ -90,7 +82,7 @@ def update_rag_configuration(query: str, pipeline, subject: Optional[str] = None
             logging.error("Cannot reinitialize pipeline: File path is missing in session state.")
             return False
 
-        pipeline_instance = initialize_pipeline(
+        pipeline_instance = PipelineInitializer.initialize_pipeline(
             file_path=st.session_state.file_path,
             embedding_model_enum=embedding_enum,
             vector_store_enum=vs_enum,

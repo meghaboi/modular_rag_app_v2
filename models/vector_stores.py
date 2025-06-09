@@ -119,141 +119,141 @@ class ChromaVectorStore(VectorStore):
         
         return [(doc, float(dist)) for doc, dist in zip(documents, distances)]
 
-class QdrantVectorStore(VectorStore):
-    """Qdrant vector store implementation with configurable connection options"""
-    
-    def __init__(self, 
-                collection_name: str = "default_collection", 
-                host: str = "localhost", 
-                port: int = 6333,
-                use_in_memory: bool = True):
-        """Initialize the Qdrant vector store
-        
-        Args:
-            collection_name: Name of the Qdrant collection to use
-            host: Hostname or IP address of the Qdrant server
-            port: Port of the Qdrant server
-            use_in_memory: If True, use in-memory storage instead of connecting to a server
-        """
-        # Import inside method to avoid requiring qdrant_client if not using this store
-        from qdrant_client import QdrantClient
-        from qdrant_client.models import Distance, VectorParams
-        import uuid
-        
-        # Generate a unique collection name if one isn't provided
-        self._collection_name = f"{collection_name}_{str(uuid.uuid4())[:8]}"
-        
-        # Initialize client with appropriate settings
-        if use_in_memory:
-            # Use in-memory storage - no server needed
-            self._client = QdrantClient(location=":memory:")
-            print("Using in-memory Qdrant storage")
-        else:
-            # Connect to server
-            try:
-                self._client = QdrantClient(host=host, port=port)
-                print(f"Connected to Qdrant server at {host}:{port}")
-            except Exception as e:
-                print(f"Failed to connect to Qdrant server: {str(e)}")
-                print("Falling back to in-memory storage")
-                self._client = QdrantClient(location=":memory:")
-        
-        # Track if collection is created and dimension is set
-        self._collection_created = False
-        self._dimension = None
-        
-        # Store document mapping
-        self._id_to_doc = {}
-    
-    def add_documents(self, documents: List[str], embeddings: List[List[float]]) -> None:
-        """Add documents and their embeddings to the vector store"""
-        from qdrant_client.models import Distance, VectorParams, PointStruct
-        
-        if not documents or not embeddings:
-            return
-        
-        # Get dimension from first embedding
-        if self._dimension is None:
-            self._dimension = len(embeddings[0])
-        
-        # Create collection if it doesn't exist
-        if not self._collection_created:
-            try:
-                self._client.recreate_collection(
-                    collection_name=self._collection_name,
-                    vectors_config=VectorParams(
-                        size=self._dimension,
-                        distance=Distance.COSINE  # Using cosine distance, could be parameterized
-                    )
-                )
-                self._collection_created = True
-            except Exception as e:
-                print(f"Error creating Qdrant collection: {str(e)}")
-                raise
-        
-        # Generate unique IDs for documents
-        ids = [i for i in range(len(documents))]
-        
-        # Store mapping of IDs to documents
-        self._id_to_doc = {doc_id: doc for doc_id, doc in zip(ids, documents)}
-        
-        # Create point objects for insertion
-        points = [
-            PointStruct(
-                id=id,
-                vector=embedding,
-                payload={"text": document}  # Store document in payload for retrieval
-            )
-            for id, document, embedding in zip(ids, documents, embeddings)
-        ]
-        
-        # Insert points in batches to avoid memory issues with large document sets
-        batch_size = 100
-        for i in range(0, len(points), batch_size):
-            batch = points[i:i+batch_size]
-            try:
-                self._client.upsert(
-                    collection_name=self._collection_name,
-                    points=batch
-                )
-            except Exception as e:
-                print(f"Error inserting documents into Qdrant: {str(e)}")
-                raise
-    
-    def search(self, query_embedding: List[float], top_k: int = 5) -> List[Tuple[str, float]]:
-        """Search for similar documents using the query embedding
-        
-        Args:
-            query_embedding: The embedding of the query
-            top_k: Number of results to return
-            
-        Returns:
-            List of (document, score) tuples
-        """
-        if not self._collection_created:
-            return []
-        
-        try:
-            # Search for similar vectors
-            search_results = self._client.search(
-                collection_name=self._collection_name,
-                query_vector=query_embedding,
-                limit=min(top_k, len(self._id_to_doc)),
-                with_payload=True
-            )
-            
-            # Format results as (document, score) tuples
-            results = []
-            for result in search_results:
-                document = result.payload.get("text")
-                # Convert similarity score to distance for consistency with other vector stores
-                distance = 1.0 - result.score
-                results.append((document, float(distance)))
-            
-            return results
-        except Exception as e:
-            print(f"Error searching Qdrant vector store: {str(e)}")
-            return []
+# class QdrantVectorStore(VectorStore):
+#     """Qdrant vector store implementation with configurable connection options"""
+#
+#     def __init__(self,
+#                 collection_name: str = "default_collection",
+#                 host: str = "localhost",
+#                 port: int = 6333,
+#                 use_in_memory: bool = True):
+#         """Initialize the Qdrant vector store
+#
+#         Args:
+#             collection_name: Name of the Qdrant collection to use
+#             host: Hostname or IP address of the Qdrant server
+#             port: Port of the Qdrant server
+#             use_in_memory: If True, use in-memory storage instead of connecting to a server
+#         """
+#         # Import inside method to avoid requiring qdrant_client if not using this store
+#         from qdrant_client import QdrantClient
+#         from qdrant_client.models import Distance, VectorParams
+#         import uuid
+#
+#         # Generate a unique collection name if one isn't provided
+#         self._collection_name = f"{collection_name}_{str(uuid.uuid4())[:8]}"
+#
+#         # Initialize client with appropriate settings
+#         if use_in_memory:
+#             # Use in-memory storage - no server needed
+#             self._client = QdrantClient(location=":memory:")
+#             print("Using in-memory Qdrant storage")
+#         else:
+#             # Connect to server
+#             try:
+#                 self._client = QdrantClient(host=host, port=port)
+#                 print(f"Connected to Qdrant server at {host}:{port}")
+#             except Exception as e:
+#                 print(f"Failed to connect to Qdrant server: {str(e)}")
+#                 print("Falling back to in-memory storage")
+#                 self._client = QdrantClient(location=":memory:")
+#
+#         # Track if collection is created and dimension is set
+#         self._collection_created = False
+#         self._dimension = None
+#
+#         # Store document mapping
+#         self._id_to_doc = {}
+#
+#     def add_documents(self, documents: List[str], embeddings: List[List[float]]) -> None:
+#         """Add documents and their embeddings to the vector store"""
+#         from qdrant_client.models import Distance, VectorParams, PointStruct
+#
+#         if not documents or not embeddings:
+#             return
+#
+#         # Get dimension from first embedding
+#         if self._dimension is None:
+#             self._dimension = len(embeddings[0])
+#
+#         # Create collection if it doesn't exist
+#         if not self._collection_created:
+#             try:
+#                 self._client.recreate_collection(
+#                     collection_name=self._collection_name,
+#                     vectors_config=VectorParams(
+#                         size=self._dimension,
+#                         distance=Distance.COSINE  # Using cosine distance, could be parameterized
+#                     )
+#                 )
+#                 self._collection_created = True
+#             except Exception as e:
+#                 print(f"Error creating Qdrant collection: {str(e)}")
+#                 raise
+#
+#         # Generate unique IDs for documents
+#         ids = [i for i in range(len(documents))]
+#
+#         # Store mapping of IDs to documents
+#         self._id_to_doc = {doc_id: doc for doc_id, doc in zip(ids, documents)}
+#
+#         # Create point objects for insertion
+#         points = [
+#             PointStruct(
+#                 id=id,
+#                 vector=embedding,
+#                 payload={"text": document}  # Store document in payload for retrieval
+#             )
+#             for id, document, embedding in zip(ids, documents, embeddings)
+#         ]
+#
+#         # Insert points in batches to avoid memory issues with large document sets
+#         batch_size = 100
+#         for i in range(0, len(points), batch_size):
+#             batch = points[i:i+batch_size]
+#             try:
+#                 self._client.upsert(
+#                     collection_name=self._collection_name,
+#                     points=batch
+#                 )
+#             except Exception as e:
+#                 print(f"Error inserting documents into Qdrant: {str(e)}")
+#                 raise
+#
+#     def search(self, query_embedding: List[float], top_k: int = 5) -> List[Tuple[str, float]]:
+#         """Search for similar documents using the query embedding
+#
+#         Args:
+#             query_embedding: The embedding of the query
+#             top_k: Number of results to return
+#
+#         Returns:
+#             List of (document, score) tuples
+#         """
+#         if not self._collection_created:
+#             return []
+#
+#         try:
+#             # Search for similar vectors
+#             search_results = self._client.search(
+#                 collection_name=self._collection_name,
+#                 query_vector=query_embedding,
+#                 limit=min(top_k, len(self._id_to_doc)),
+#                 with_payload=True
+#             )
+#
+#             # Format results as (document, score) tuples
+#             results = []
+#             for result in search_results:
+#                 document = result.payload.get("text")
+#                 # Convert similarity score to distance for consistency with other vector stores
+#                 distance = 1.0 - result.score
+#                 results.append((document, float(distance)))
+#
+#             return results
+#         except Exception as e:
+#             print(f"Error searching Qdrant vector store: {str(e)}")
+#             return []
 
 class MilvusVectorStore(VectorStore):
     """Milvus vector store implementation with fallback to in-memory when server isn't available"""
@@ -492,7 +492,7 @@ class HybridVectorStore(VectorStore):
             alpha: Weight for vector search scores (1-alpha = weight for BM25)
         """
         
-        from rag_pipeline import HybridSearch   
+        from pipeline.components.hybrid_search import HybridSearch   
 
         self.hybrid_search = HybridSearch(alpha=alpha)
         self.documents = []

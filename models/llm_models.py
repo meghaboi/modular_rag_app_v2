@@ -8,12 +8,15 @@ from mistralai.client import MistralClient
 from mistralai.models import UserMessage, SystemMessage
 
 from utils.enums import LLMModelType
+from prompts import get_provider
 
 class StreamingLLM(ABC):
     """Abstract base class for streaming LLM models"""
     
     def __init__(self):
         self._last_call_usage: Optional[Dict[str, int]] = None
+        self._prompt_provider = get_provider('llm')
+        self._system_prompt = self._prompt_provider.get_prompt('system')
     
     @abstractmethod
     def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Tuple[str, Optional[Dict[str, int]]]:
@@ -70,25 +73,15 @@ class StreamingLLM(ABC):
 class OpenAIGPT(StreamingLLM):
     """OpenAI GPT model implementation with streaming support"""
     
-    def __init__(self, model_name: str = "gpt-3.5-turbo"):
+    def __init__(self, model_name: str = "gpt-4-turbo-preview"):
         """Initialize the OpenAI GPT model"""
         super().__init__()
         if not os.environ.get("OPENAI_API_KEY"):
             raise ValueError("OpenAI API key not found in environment variables")
         
-        self._client = OpenAI() # Initialize OpenAI client
+        self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) # Initialize OpenAI client
         self._model_name = model_name
 
-        # Define system prompt for JEFF
-        self._jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
-        You explain complex subjects in simple, relatable terms that just click when it matters most.
-        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
-        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
-        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
-        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
-        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
-        
-    
     def get_model_name(self) -> str:
         """Get the name of the model"""
         return self._model_name
@@ -101,10 +94,10 @@ class OpenAIGPT(StreamingLLM):
             if system_prompt_override != "":
                 messages.append({"role": "system", "content": system_prompt_override})
         elif not evaluation_mode:
-            messages.append({"role": "system", "content": self._jeff_system_prompt})
+            messages.append({"role": "system", "content": self._system_prompt})
         
         if context:
-            user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}\n\nAnswer:"
+            user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
         else:
             user_content = prompt
             
@@ -134,10 +127,10 @@ class OpenAIGPT(StreamingLLM):
             if system_prompt_override != "":
                 messages.append({"role": "system", "content": system_prompt_override})
         elif not evaluation_mode:
-            messages.append({"role": "system", "content": self._jeff_system_prompt})
+            messages.append({"role": "system", "content": self._system_prompt})
 
         if context:
-            user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}\n\nAnswer:"
+            user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
         else:
             user_content = prompt
             
@@ -159,29 +152,20 @@ class OpenAIGPT(StreamingLLM):
 class GeminiLLM(StreamingLLM):
     """Google Gemini model implementation with streaming support"""
     
-    def __init__(self, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, model_name: str = "gemini-2.5-flash"):
         """Initialize the Google Gemini model"""
         super().__init__()
-        gemini_api_key = os.environ.get("GEMINI_API_KEY")
+        gemini_api_key = os.environ.get("GOOGLE_API_KEY")
         if not gemini_api_key:
             raise ValueError("Gemini API key not found in environment variables")
         
         genai.configure(api_key=gemini_api_key)
         
-        # Define system prompt for JEFF
-        self._jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
-        You explain complex subjects in simple, relatable terms that just click when it matters most.
-        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
-        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
-        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
-        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
-        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
-        
-        self._model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=self._jeff_system_prompt # Set system prompt at model level
-        )
         self._model_name = model_name
+        self._model = genai.GenerativeModel(
+            model_name=self._model_name,
+            system_instruction=self._system_prompt
+        )
     
     def get_model_name(self) -> str:
         """Get the name of the model"""
@@ -191,12 +175,12 @@ class GeminiLLM(StreamingLLM):
         """Generate text from a prompt and optional context"""
         
         if context:
-            user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}\n\nAnswer:"
+            user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
         else:
             user_content = prompt
 
         model_to_use = self._model
-        current_system_instruction = self._jeff_system_prompt
+        current_system_instruction = self._system_prompt
 
         if system_prompt_override is not None:
             if system_prompt_override == "":
@@ -207,17 +191,16 @@ class GeminiLLM(StreamingLLM):
             current_system_instruction = None
 
         # Only re-initialize model if the system instruction changes
-        if current_system_instruction != self._model.system_instruction: # Check against the original model's instruction
-             model_to_use = genai.GenerativeModel(
+        if current_system_instruction != self._model.system_instruction:
+            model_to_use = genai.GenerativeModel(
                 model_name=self._model_name,
                 system_instruction=current_system_instruction
             )
-        elif evaluation_mode and self._model.system_instruction is not None : # handles case where default model has system prompt but evaluation mode needs none
-             model_to_use = genai.GenerativeModel(
+        elif evaluation_mode and self._model.system_instruction is not None:
+            model_to_use = genai.GenerativeModel(
                 model_name=self._model_name,
                 system_instruction=None
             )
-
 
         try:
             response = model_to_use.generate_content(user_content)
@@ -243,12 +226,12 @@ class GeminiLLM(StreamingLLM):
         """
         
         if context:
-            user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}\n\nAnswer:"
+            user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
         else:
             user_content = prompt
             
         model_to_use = self._model
-        current_system_instruction = self._jeff_system_prompt
+        current_system_instruction = self._system_prompt
 
         if system_prompt_override is not None:
             if system_prompt_override == "":
@@ -259,13 +242,13 @@ class GeminiLLM(StreamingLLM):
             current_system_instruction = None
 
         # Only re-initialize model if the system instruction changes
-        if current_system_instruction != self._model.system_instruction: # Check against the original model's instruction
+        if current_system_instruction != self._model.system_instruction:
             model_to_use = genai.GenerativeModel(
                 model_name=self._model_name,
                 system_instruction=current_system_instruction
             )
-        elif evaluation_mode and self._model.system_instruction is not None : # handles case where default model has system prompt but evaluation mode needs none
-             model_to_use = genai.GenerativeModel(
+        elif evaluation_mode and self._model.system_instruction is not None:
+            model_to_use = genai.GenerativeModel(
                 model_name=self._model_name,
                 system_instruction=None
             )
@@ -295,18 +278,9 @@ class ClaudeLLM(StreamingLLM):
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise ValueError("Anthropic API key not found in environment variables")
         
-        self._client = Anthropic() # Initialize Anthropic client
+        self._client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY")) # Initialize Anthropic client
         self._model_name = model_name
 
-        # Define system prompt for JEFF
-        self._jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
-        You explain complex subjects in simple, relatable terms that just click when it matters most.
-        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
-        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
-        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
-        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
-        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
-        
     def get_model_name(self) -> str:
         """Get the name of the model"""
         return self._model_name
@@ -315,7 +289,7 @@ class ClaudeLLM(StreamingLLM):
         """Generate text from a prompt and optional context"""
         
         if context:
-            user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}\n\nAnswer:"
+            user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
         else:
             user_content = prompt
         
@@ -324,7 +298,7 @@ class ClaudeLLM(StreamingLLM):
             if system_prompt_override != "":
                 system_param_value = system_prompt_override
         elif not evaluation_mode:
-            system_param_value = self._jeff_system_prompt
+            system_param_value = self._system_prompt
         # If evaluation_mode is True and system_prompt_override is None, system_param_value remains None
 
         request_params = {
@@ -350,7 +324,7 @@ class ClaudeLLM(StreamingLLM):
         """Stream generate text from a prompt and optional context"""
         
         if context:
-            user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}\n\nAnswer:"
+            user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
         else:
             user_content = prompt
 
@@ -359,7 +333,7 @@ class ClaudeLLM(StreamingLLM):
             if system_prompt_override != "":
                 system_param_value = system_prompt_override
         elif not evaluation_mode:
-            system_param_value = self._jeff_system_prompt
+            system_param_value = self._system_prompt
         # If evaluation_mode is True and system_prompt_override is None, system_param_value remains None
 
         request_params = {
@@ -398,15 +372,6 @@ class MistralLLM(StreamingLLM):
         self._client = MistralClient(api_key=api_key)
         self._model_name = model_name
 
-        # Define system prompt for JEFF
-        self._jeff_system_prompt = """You are JEFF, that cool friend everyone wishes they had the night before exams.
-        You explain complex subjects in simple, relatable terms that just click when it matters most.
-        Unlike formal professors, you break down academic concepts with perfect clarity, memorable examples, and occasional humor.
-        You excel at finding the shortcuts, mnemonics, and "aha!" moments that make difficult material suddenly make sense.
-        Your explanations focus on what's actually important to understand and remember, cutting through the noise.
-        You're encouraging, patient, and have a knack for making anyone feel like they can ace their exam.
-        Always respond as JEFF - casual but knowledgeable, relatable but authoritative, and above all, the friend who helps everyone pass their exams."""
-        
     def get_model_name(self) -> str:
         """Get the name of the model"""
         return self._model_name
@@ -419,10 +384,10 @@ class MistralLLM(StreamingLLM):
             if system_prompt_override != "":
                 messages.append(SystemMessage(content=system_prompt_override))
         elif not evaluation_mode:
-            messages.append(SystemMessage(content=self._jeff_system_prompt))
+            messages.append(SystemMessage(content=self._system_prompt))
         
         if context:
-            user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}\n\nAnswer:"
+            user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
         else:
             user_content = prompt
             
@@ -452,10 +417,10 @@ class MistralLLM(StreamingLLM):
             if system_prompt_override != "":
                 messages.append(SystemMessage(content=system_prompt_override))
         elif not evaluation_mode:
-            messages.append(SystemMessage(content=self._jeff_system_prompt))
+            messages.append(SystemMessage(content=self._system_prompt))
 
         if context:
-            user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}\n\nAnswer:"
+            user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
         else:
             user_content = prompt
             
