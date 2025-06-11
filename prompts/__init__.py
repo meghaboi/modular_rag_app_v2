@@ -4,10 +4,11 @@ Prompt management system for the RAG application.
 
 from .prompt_providers import (
     BasePromptProvider,
-    RAGPromptProvider,
-    DocumentPromptProvider,
+    LLMPromptProvider,
+    SummarizerPromptProvider,
     QueryAnalysisPromptProvider,
-    SystemPromptProvider,
+    ErrorPromptProvider,
+    UIPromptProvider,
     get_provider,
     PromptError,
     MissingTemplateError,
@@ -16,10 +17,11 @@ from .prompt_providers import (
 
 __all__ = [
     'BasePromptProvider',
-    'RAGPromptProvider',
-    'DocumentPromptProvider',
+    'LLMPromptProvider',
+    'SummarizerPromptProvider',
     'QueryAnalysisPromptProvider',
-    'SystemPromptProvider',
+    'ErrorPromptProvider',
+    'UIPromptProvider',
     'get_provider',
     'PromptError',
     'MissingTemplateError',

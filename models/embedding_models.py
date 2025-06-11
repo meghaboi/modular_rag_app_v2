@@ -41,7 +41,7 @@ class OpenAIEmbedding(EmbeddingModel):
         if not os.environ.get("OPENAI_API_KEY"):
             raise ValueError("OpenAI API key not found in environment variables")
         
-        self._model = OpenAIEmbeddings(model="text-embedding-3-small")
+        self._model = OpenAIEmbeddings(model="text-embedding-3-large")
     
     def embed_query(self, query: str) -> List[float]:
         """Convert a query string to an embedding vector"""
@@ -57,29 +57,41 @@ class OpenAIEmbedding(EmbeddingModel):
         return 1536  # text-embedding-3-small dimension
 
 class CohereEmbedding(EmbeddingModel):
-    """Cohere embedding model implementation"""
-    
+    """Cohere embedding model implementation using official Cohere SDK"""
+
     def __init__(self):
         """Initialize the Cohere embedding model"""
-        from langchain_cohere import CohereEmbeddings
-        
-        if not os.environ.get("COHERE_API_KEY"):
+        import cohere
+
+        api_key = os.environ.get("COHERE_API_KEY")
+        if not api_key:
             raise ValueError("Cohere API key not found in environment variables")
-        
-        self._model = CohereEmbeddings(model="embed-english-v3.0")
-    
+
+        self._client = cohere.Client(api_key=api_key)
+        self._model_name = "embed-v4.0"
+
     def embed_query(self, query: str) -> List[float]:
         """Convert a query string to an embedding vector"""
-        return self._model.embed_query(query)
-    
+        response = self._client.embed(
+            texts=[query],
+            model=self._model_name,
+            input_type="search_query"
+        )
+        return response.embeddings[0]
+
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Convert a list of document strings to embedding vectors"""
-        return self._model.embed_documents(documents)
-    
+        response = self._client.embed(
+            texts=documents,
+            model=self._model_name,
+            input_type="search_document"
+        )
+        return response.embeddings
+
     @property
     def dimension(self) -> int:
         """Return the dimension of the embedding vectors"""
-        return 1024  # Cohere embed-english-v3.0 dimension
+        return 1024
 
 class GeminiEmbedding(EmbeddingModel):
     """Gemini embedding model implementation"""
@@ -316,111 +328,62 @@ class BGEEmbedding(EmbeddingModel):
         return 1024  # BGE-large-en-v1.5 dimension
 
 class VoyageEmbedding(EmbeddingModel):
-    """Voyage AI embedding model implementation with batching and rate limiting"""
-    
-    def __init__(self, model_name="voyage-3", batch_size=10, 
-                 initial_delay=1, max_retries=5, max_delay=60):
+    """Voyage AI embedding model implementation using official Voyage SDK"""
+
+    def __init__(self, model_name="voyage-3", batch_size=128):
         """Initialize the Voyage AI embedding model"""
+        import voyageai
+
         api_key = os.environ.get("VOYAGE_API_KEY")
         if not api_key:
             raise ValueError("Voyage API key not found in environment variables")
-        
-        self._api_key = api_key
+
+        self._client = voyageai.Client(api_key=api_key)
         self._model_name = model_name
         self._batch_size = batch_size
-        self._initial_delay = initial_delay
-        self._max_retries = max_retries
-        self._max_delay = max_delay
-        self._api_url = "https://api.voyageai.com/v1/embeddings"
-    
-    def _call_api_with_backoff(self, texts: List[str]) -> List[List[float]]:
-        """Call the Voyage AI API with exponential backoff for rate limiting"""
-        retry_count = 0
-        delay = self._initial_delay
-        
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": self._model_name,
-            "input": texts
-        }
-        
-        while True:
-            try:
-                response = requests.post(self._api_url, headers=headers, json=payload)
-                
-                if response.status_code == 200:
-                    return response.json()["data"]
-                elif response.status_code == 429:
-                    # Rate limit error, implement backoff
-                    retry_count += 1
-                    
-                    if retry_count > self._max_retries:
-                        logger.error(f"Maximum retries ({self._max_retries}) exceeded. Giving up.")
-                        response.raise_for_status()
-                    
-                    # Add jitter to avoid all clients retrying at the same time
-                    jitter = random.uniform(0, 0.1 * delay)
-                    actual_delay = min(delay + jitter, self._max_delay)
-                    
-                    logger.warning(f"Rate limit exceeded. Retrying in {actual_delay:.2f} seconds (retry {retry_count}/{self._max_retries})")
-                    time.sleep(actual_delay)
-                    
-                    # Exponential backoff
-                    delay = min(delay * 2, self._max_delay)
-                else:
-                    # For other errors, raise the exception
-                    response.raise_for_status()
-            except Exception as e:
-                if retry_count >= self._max_retries:
-                    logger.error(f"Failed to get embeddings after {retry_count} retries: {str(e)}")
-                    raise e
-                
-                retry_count += 1
-                actual_delay = min(delay * (1 + 0.1 * random.random()), self._max_delay)
-                logger.warning(f"API call failed: {str(e)}. Retrying in {actual_delay:.2f} seconds (retry {retry_count}/{self._max_retries})")
-                time.sleep(actual_delay)
-                delay = min(delay * 2, self._max_delay)
-    
+
     def _batch_documents(self, documents: List[str]) -> List[List[str]]:
         """Split documents into batches of specified size"""
         return [documents[i:i + self._batch_size] for i in range(0, len(documents), self._batch_size)]
-    
+
     def embed_query(self, query: str) -> List[float]:
         """Convert a query string to an embedding vector"""
-        response_data = self._call_api_with_backoff([query])
-        return response_data[0]["embedding"]
-    
+        result = self._client.embed(
+            texts=[query],
+            model=self._model_name,
+            input_type="query"
+        )
+        return result.embeddings[0]
+
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Convert a list of document strings to embedding vectors with automatic batching"""
         all_embeddings = []
-        
-        # Create batches
+
+        # Create batches to respect API limits
         batches = self._batch_documents(documents)
-        
-        for i, batch in enumerate(batches):
-            logger.info(f"Processing batch {i+1}/{len(batches)} with {len(batch)} documents")
-            
-            # Add delay between batches to avoid rate limiting
-            if i > 0:
-                time.sleep(1)  # 1 second delay between batches
-            
-            response_data = self._call_api_with_backoff(batch)
-            
-            # Extract embeddings from the response and add to results
-            batch_embeddings = [item["embedding"] for item in response_data]
-            all_embeddings.extend(batch_embeddings)
-        
+
+        for batch in batches:
+            result = self._client.embed(
+                texts=batch,
+                model=self._model_name,
+                input_type="document"
+            )
+            all_embeddings.extend(result.embeddings)
+
         return all_embeddings
-    
+
     @property
     def dimension(self) -> int:
         """Return the dimension of the embedding vectors"""
-        # Voyage-2 has 1024 dimensions
-        return 1024
+        # Voyage-3 has 1024 dimensions. Voyage-2 has 1024, voyage-large-2 has 1536
+        model_dimensions = {
+            "voyage-3": 1024,
+            "voyage-2": 1024,
+            "voyage-large-2": 1536,
+            "voyage-code-2": 1536,
+            "voyage-large-2-instruct": 1536
+        }
+        return model_dimensions.get(self._model_name, 1024)
 
 class EmbeddingModelFactory:
     """Factory for creating embedding models using enum type"""

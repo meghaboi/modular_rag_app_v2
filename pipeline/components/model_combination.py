@@ -45,7 +45,7 @@ class ModelCombination:
                 [EmbeddingModelType.MISTRAL, EmbeddingModelType.OPENAI],
                 [VectorStoreType.CHROMA, VectorStoreType.HYBRID],
                 [RerankerModelType.NONE, RerankerModelType.COHERE_V3],
-                [LLMModelType.CLAUDE_37_SONNET, LLMModelType.MISTRAL_LARGE]
+                [LLMModelType.CLAUDE_4_SONNET, LLMModelType.MISTRAL_LARGE]
             )
         ]
 

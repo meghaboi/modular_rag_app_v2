@@ -73,10 +73,32 @@ def display_settings_panel():
     if new_mode != st.session_state.mode:
         st.session_state.mode = new_mode
         st.session_state.messages = []
-        st.session_state.pipeline = None
-        st.session_state.permutation_results = None
-        st.session_state.permutation_df = None
-        logging.info(f"Mode changed to: {st.session_state.mode}. Resetting state.")
+        
+        # Only reset the pipeline if there are configuration changes
+        if st.session_state.pipeline is not None:
+            current_config = {
+                'embedding_model': st.session_state.embedding_model,
+                'vector_store': st.session_state.vector_store,
+                'reranker': st.session_state.reranker,
+                'llm_model': st.session_state.llm_model,
+                'chunking_strategy': st.session_state.chunking_strategy,
+                'hybrid_alpha': st.session_state.hybrid_alpha,
+                'chunk_size': st.session_state.chunk_size,
+                'chunk_overlap': st.session_state.chunk_overlap,
+                'top_k': st.session_state.top_k
+            }
+            
+            # Check if any config has changed
+            if current_config != st.session_state.pipeline.get_config():
+                st.session_state.pipeline = None
+                st.session_state.permutation_results = None
+                st.session_state.permutation_df = None
+                logging.info(f"Configuration changed. Resetting pipeline state.")
+            else:
+                logging.info(f"Mode changed without config changes. Preserving pipeline state.")
+        else:
+            logging.info(f"Mode changed. No existing pipeline to reset.")
+            
         st.rerun()
 
     st.sidebar.header("📚 Load Textbook")
@@ -96,7 +118,7 @@ def display_settings_panel():
                 st.session_state.current_summary = ""
                 st.session_state.point_extraction_llm_missing_keys = False
 
-                point_extraction_llm_type = LLMModelType.CLAUDE_37_SONNET
+                point_extraction_llm_type = LLMModelType.CLAUDE_4_SONNET
 
                 current_embedding_model = EmbeddingModelType.from_string(
                     st.session_state.get('embedding_model', DEFAULT_EMBEDDING_MODEL.value))
@@ -164,7 +186,7 @@ def display_settings_panel():
                 st.session_state.pipeline = None
 
     st.sidebar.header("🚦 System Status")
-    with st.sidebar.container(border=True):
+    with st.sidebar.container():
         if st.session_state.file_path and os.path.exists(st.session_state.file_path):
             st.success(f"✅ Textbook: {st.session_state.last_uploaded_filename}")
         else:
@@ -413,32 +435,18 @@ def display_settings_panel():
     disable_init = not st.session_state.file_path or st.session_state.pipeline is not None
     if st.sidebar.button("🚀 Initialize JEFF", key="init_pipeline", help="Load textbook with current settings.",
                          disabled=disable_init):
-        try:
-            embedding_model = EmbeddingModelFactory.create_model(
-                EmbeddingModelType.from_string(st.session_state.embedding_model)
-            )
-            vector_store = VectorStoreFactory.create_store(
-                VectorStoreType.from_string(st.session_state.vector_store)
-            )
-            reranker = RerankerFactory.create_reranker(
-                RerankerModelType.from_string(st.session_state.reranker)
-            )
-            llm = LLMFactory.create_llm(
-                LLMModelType.from_string(st.session_state.llm_model)
-            )
-            chunking_strategy = ChunkingStrategyFactory.get_strategy(
-                st.session_state.chunking_strategy
-            )
-        except (ValueError, TypeError) as e:
-            st.sidebar.error(f"Invalid config: {e}")
-            logging.error(f"Config error on Init: {e}")
-            st.stop()
+
+        embedding_enum = EmbeddingModelType.from_string(st.session_state.embedding_model)
+        vs_enum = VectorStoreType.from_string(st.session_state.vector_store)
+        reranker_enum = RerankerModelType.from_string(st.session_state.reranker)
+        llm_enum = LLMModelType.from_string(st.session_state.llm_model)
+        cs_enum = ChunkingStrategyType.from_string(st.session_state.chunking_strategy)
 
         missing_keys = check_api_keys(
-            embedding_model_enum=EmbeddingModelType.from_string(st.session_state.embedding_model),
-            vector_store_enum=VectorStoreType.from_string(st.session_state.vector_store),
-            reranker_enum=RerankerModelType.from_string(st.session_state.reranker),
-            llm_enum=LLMModelType.from_string(st.session_state.llm_model)
+            embedding_model_enum=embedding_enum,
+            vector_store_enum=vs_enum,
+            reranker_enum=reranker_enum,
+            llm_enum=llm_enum
         )
 
         if missing_keys:
@@ -446,11 +454,12 @@ def display_settings_panel():
         else:
             with st.spinner("Warming up JEFF's brain..."):
                 pipeline_instance = PipelineInitializer.initialize_pipeline(
-                    embedding_model=embedding_model,
-                    vector_store=vector_store,
-                    reranker=reranker,
-                    llm=llm,
-                    chunking_strategy=chunking_strategy,
+                    file_path=st.session_state.file_path,
+                    embedding_model_enum=embedding_enum,
+                    vector_store_enum=vs_enum,
+                    reranker_enum=reranker_enum,
+                    llm_enum=llm_enum,
+                    chunking_strategy_enum=cs_enum,
                     chunk_size=st.session_state.chunk_size,
                     chunk_overlap=st.session_state.chunk_overlap,
                     top_k=st.session_state.top_k,

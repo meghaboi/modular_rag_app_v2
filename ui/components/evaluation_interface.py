@@ -263,7 +263,7 @@ class EvaluationInterface:
 
         perm_emb = [EmbeddingModelType.OPENAI, EmbeddingModelType.GEMINI, EmbeddingModelType.MISTRAL]
         perm_rerank = list(RerankerModelType)
-        perm_llm = [LLMModelType.CLAUDE_37_SONNET, LLMModelType.GEMINI]
+        perm_llm = [LLMModelType.CLAUDE_4_SONNET, LLMModelType.GEMINI]
         potential_missing = set()
 
         for e_perm, r_perm, l_perm in itertools.product(perm_emb, perm_rerank, perm_llm):

@@ -104,7 +104,7 @@ class UIPromptProvider(BasePromptProvider):
     
     def __init__(self):
         """Initialize the UI prompt provider."""
-        self._templates = {
+        self.templates = {
             'welcome': prompt_templates.WELCOME_MESSAGE_TEMPLATE,
             'warning': prompt_templates.WARNING_MESSAGE_TEMPLATE
         }
@@ -128,13 +128,21 @@ class RerankerPromptProvider(BasePromptProvider):
             kwargs['documents'] = '\n'.join(documents)
         return super().get_prompt(prompt_type, **kwargs)
 
+class GreetingPromptProvider(BasePromptProvider):
+    """Provider for greeting-related prompts."""
+    
+    def _load_templates(self):
+        self.templates = {
+            'greeting_detection': prompt_templates.GREETING_DETECTION_TEMPLATE,
+        }
+
 # Factory function to get the appropriate provider
 def get_provider(provider_type: str) -> BasePromptProvider:
     """
     Factory function to get the appropriate prompt provider.
     
     Args:
-        provider_type: Type of provider to get ('llm', 'summarizer', 'query', 'error', 'ui', 'reranker')
+        provider_type: Type of provider to get ('llm', 'summarizer', 'query', 'error', 'ui', 'reranker', 'greeting')
         
     Returns:
         BasePromptProvider: The requested provider instance
@@ -148,7 +156,8 @@ def get_provider(provider_type: str) -> BasePromptProvider:
         'query': QueryAnalysisPromptProvider,
         'error': ErrorPromptProvider,
         'ui': UIPromptProvider,
-        'reranker': RerankerPromptProvider
+        'reranker': RerankerPromptProvider,
+        'greeting': GreetingPromptProvider
     }
     
     if provider_type not in providers:

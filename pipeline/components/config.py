@@ -53,7 +53,7 @@ class PipelineConfig:
             file_path=file_path,
             vector_store_type=VectorStoreType.CHROMA,
             reranker_type=RerankerModelType.NONE,
-            llm_type=LLMModelType.CLAUDE_37_SONNET,
+            llm_type=LLMModelType.CLAUDE_4_SONNET,
             chunking_strategy_type=ChunkingStrategyType.PARAGRAPH
         )
 

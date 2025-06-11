@@ -20,7 +20,7 @@ def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_e
                      reranker_enum in [RerankerModelType.COHERE_V2, RerankerModelType.COHERE_V3, RerankerModelType.COHERE_MULTILINGUAL])
     gemini_needed = (embedding_model_enum == EmbeddingModelType.GEMINI or
                      llm_enum == LLMModelType.GEMINI)
-    anthropic_needed = (llm_enum in [LLMModelType.CLAUDE_3_OPUS, LLMModelType.CLAUDE_37_SONNET])
+    anthropic_needed = (llm_enum in [LLMModelType.CLAUDE_4_OPUS, LLMModelType.CLAUDE_4_SONNET])
     mistral_needed = (embedding_model_enum == EmbeddingModelType.MISTRAL or
                       llm_enum in [LLMModelType.MISTRAL_LARGE, LLMModelType.MISTRAL_MEDIUM, LLMModelType.MISTRAL_SMALL])
     voyage_needed = (embedding_model_enum == EmbeddingModelType.VOYAGE or

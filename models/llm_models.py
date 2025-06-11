@@ -151,37 +151,85 @@ class OpenAIGPT(StreamingLLM):
 
 class GeminiLLM(StreamingLLM):
     """Google Gemini model implementation with streaming support"""
-    
+
     def __init__(self, model_name: str = "gemini-2.5-flash"):
         """Initialize the Google Gemini model"""
         super().__init__()
-        gemini_api_key = os.environ.get("GOOGLE_API_KEY")
+        gemini_api_key = os.environ.get("GEMINI_API_KEY")
         if not gemini_api_key:
             raise ValueError("Gemini API key not found in environment variables")
-        
+
         genai.configure(api_key=gemini_api_key)
-        
+
         self._model_name = model_name
-        self._model = genai.GenerativeModel(
-            model_name=self._model_name,
-            system_instruction=self._system_prompt
-        )
-    
+        # Initialize model without system_instruction initially
+        self._model = genai.GenerativeModel(model_name=self._model_name)
+
+        # Check if system_instruction is supported
+        self._supports_system_instruction = self._check_system_instruction_support()
+
+        # If supported, reinitialize with system instruction
+        if self._supports_system_instruction and hasattr(self, '_system_prompt') and self._system_prompt:
+            try:
+                self._model = genai.GenerativeModel(
+                    model_name=self._model_name,
+                    system_instruction=self._system_prompt
+                )
+            except Exception:
+                # Fallback if there's still an issue
+                self._model = genai.GenerativeModel(model_name=self._model_name)
+                self._supports_system_instruction = False
+
+    def _check_system_instruction_support(self) -> bool:
+        """Check if the current version supports system_instruction parameter"""
+        try:
+            # Try creating a model with system_instruction to test support
+            test_model = genai.GenerativeModel(
+                model_name=self._model_name,
+                system_instruction="test"
+            )
+            return True
+        except TypeError:
+            return False
+        except Exception:
+            # Other exceptions might indicate API issues, assume supported
+            return True
+
     def get_model_name(self) -> str:
         """Get the name of the model"""
         return self._model_name
 
-    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Tuple[str, Optional[Dict[str, int]]]:
+    def _create_model_with_system_instruction(self, system_instruction: Optional[str]) -> Any:
+        """Create a model with the specified system instruction"""
+        if self._supports_system_instruction and system_instruction is not None:
+            try:
+                return genai.GenerativeModel(
+                    model_name=self._model_name,
+                    system_instruction=system_instruction
+                )
+            except Exception:
+                # Fallback to model without system instruction
+                return genai.GenerativeModel(model_name=self._model_name)
+        else:
+            return genai.GenerativeModel(model_name=self._model_name)
+
+    def _prepare_content_with_system_prompt(self, user_content: str, system_instruction: Optional[str]) -> str:
+        """Prepare content by prepending system instruction if not natively supported"""
+        if not self._supports_system_instruction and system_instruction:
+            return f"{system_instruction}\n\n{user_content}"
+        return user_content
+
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False,
+                 system_prompt_override: Optional[str] = None) -> Tuple[str, Optional[Dict[str, int]]]:
         """Generate text from a prompt and optional context"""
-        
+
         if context:
             user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
         else:
             user_content = prompt
 
-        model_to_use = self._model
+        # Determine the system instruction to use
         current_system_instruction = self._system_prompt
-
         if system_prompt_override is not None:
             if system_prompt_override == "":
                 current_system_instruction = None
@@ -190,49 +238,50 @@ class GeminiLLM(StreamingLLM):
         elif evaluation_mode:
             current_system_instruction = None
 
-        # Only re-initialize model if the system instruction changes
-        if current_system_instruction != self._model.system_instruction:
-            model_to_use = genai.GenerativeModel(
-                model_name=self._model_name,
-                system_instruction=current_system_instruction
-            )
-        elif evaluation_mode and self._model.system_instruction is not None:
-            model_to_use = genai.GenerativeModel(
-                model_name=self._model_name,
-                system_instruction=None
-            )
+        # Create model with appropriate system instruction
+        model_to_use = self._create_model_with_system_instruction(current_system_instruction)
+
+        # Prepare content (add system instruction to content if not natively supported)
+        final_content = self._prepare_content_with_system_prompt(user_content, current_system_instruction)
 
         try:
-            response = model_to_use.generate_content(user_content)
-            # Gemini response object has usage_metadata directly
-            usage = response.usage_metadata 
-            self._set_last_call_usage(usage, "gemini")
+            response = model_to_use.generate_content(final_content)
+
+            # Handle usage metadata if available
+            usage = None
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                usage = response.usage_metadata
+                self._set_last_call_usage(usage, "gemini")
+            else:
+                self._set_last_call_usage(None, "gemini")
+
             return response.text, self._last_call_usage
+
         except Exception as e:
             # Fallback for cases where response.text might not be available or other errors
             self._set_last_call_usage(None, "gemini")
             try:
-                if response.candidates and response.candidates[0].content.parts:
+                if hasattr(response, 'candidates') and response.candidates and response.candidates[0].content.parts:
                     return "".join(part.text for part in response.candidates[0].content.parts), None
             except:
-                pass # Original error is more informative
+                pass  # Original error is more informative
             print(f"Error during Gemini API call: {e}")
             return "Error: Could not get response from model.", None
-    
-    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Iterator[str]:
+
+    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False,
+                        system_prompt_override: Optional[str] = None) -> Iterator[str]:
         """Stream generate text from a prompt and optional context.
         Note: Gemini streaming API does not provide token usage per chunk or easily post-stream.
         Call get_last_call_usage() after a non-streaming generate() for usage info.
         """
-        
+
         if context:
             user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
         else:
             user_content = prompt
-            
-        model_to_use = self._model
-        current_system_instruction = self._system_prompt
 
+        # Determine the system instruction to use
+        current_system_instruction = self._system_prompt
         if system_prompt_override is not None:
             if system_prompt_override == "":
                 current_system_instruction = None
@@ -241,29 +290,31 @@ class GeminiLLM(StreamingLLM):
         elif evaluation_mode:
             current_system_instruction = None
 
-        # Only re-initialize model if the system instruction changes
-        if current_system_instruction != self._model.system_instruction:
-            model_to_use = genai.GenerativeModel(
-                model_name=self._model_name,
-                system_instruction=current_system_instruction
-            )
-        elif evaluation_mode and self._model.system_instruction is not None:
-            model_to_use = genai.GenerativeModel(
-                model_name=self._model_name,
-                system_instruction=None
-            )
+        # Create model with appropriate system instruction
+        model_to_use = self._create_model_with_system_instruction(current_system_instruction)
+
+        # Prepare content (add system instruction to content if not natively supported)
+        final_content = self._prepare_content_with_system_prompt(user_content, current_system_instruction)
 
         try:
-            stream = model_to_use.generate_content(user_content, stream=True)
+            stream = model_to_use.generate_content(final_content, stream=True)
             for chunk in stream:
                 try:
-                    yield chunk.text
+                    if hasattr(chunk, 'text') and chunk.text:
+                        yield chunk.text
                 except Exception as e:
-                    # print(f"Error processing chunk: {e}, chunk: {chunk}") # for debugging
                     # Sometimes, a chunk might not have 'text', especially safety feedback
-                    if chunk.parts:
-                        yield "".join(part.text for part in chunk.parts if hasattr(part, 'text'))
-                    # else, skip if no text and no parts with text
+                    try:
+                        if hasattr(chunk, 'parts') and chunk.parts:
+                            text_parts = []
+                            for part in chunk.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    text_parts.append(part.text)
+                            if text_parts:
+                                yield "".join(text_parts)
+                    except Exception:
+                        # Skip chunks that can't be processed
+                        continue
 
         except Exception as e:
             print(f"Error during Gemini streaming API call: {e}")
@@ -272,7 +323,7 @@ class GeminiLLM(StreamingLLM):
 class ClaudeLLM(StreamingLLM):
     """Anthropic Claude model implementation with streaming support"""
     
-    def __init__(self, model_name: str = "claude-3-opus-20240229"):
+    def __init__(self, model_name: str = "claude-sonnet-4-20250514"):
         """Initialize the Anthropic Claude model"""
         super().__init__()
         if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -338,7 +389,7 @@ class ClaudeLLM(StreamingLLM):
 
         request_params = {
             "model": self._model_name,
-            "max_tokens": 2048, # Default max_tokens, can be adjusted
+            "max_tokens": 2048, # Default max_tokens can be adjusted
             "messages": [{"role": "user", "content": user_content}]
         }
         if system_param_value is not None:
@@ -449,10 +500,10 @@ class LLMFactory:
             return OpenAIGPT(model_name="gpt-4")
         elif model_type == LLMModelType.GEMINI:
             return GeminiLLM()
-        elif model_type == LLMModelType.CLAUDE_3_OPUS:
-            return ClaudeLLM(model_name="claude-3-opus-20240229") 
-        elif model_type == LLMModelType.CLAUDE_37_SONNET:
-            return ClaudeLLM(model_name="claude-3-7-sonnet-20250219")
+        elif model_type == LLMModelType.CLAUDE_4_OPUS:
+            return ClaudeLLM(model_name="claude-opus-4-20250514")
+        elif model_type == LLMModelType.CLAUDE_4_SONNET:
+            return ClaudeLLM(model_name="claude-sonnet-4-20250514")
         elif model_type == LLMModelType.MISTRAL_LARGE:
             return MistralLLM(model_name="mistral-large-latest")
         elif model_type == LLMModelType.MISTRAL_MEDIUM:

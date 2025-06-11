@@ -6,7 +6,7 @@ from utils.token_utils import TokenCostManager
 import logging
 import time
 from dataclasses import dataclass
-from components.exceptions import (
+from pipeline.components.exceptions import (
     RAGPipelineInitializationError,
     RAGPipelineExecutionError,
     RAGPipelineEvaluationError
@@ -260,3 +260,21 @@ class RAGPipeline:
     def get_metrics(self) -> PipelineMetrics:
         """Get the current pipeline metrics"""
         return self._metrics
+
+    def get_config(self) -> Dict[str, Any]:
+        """
+        Get the current pipeline configuration.
+        
+        Returns:
+            Dict[str, Any]: Dictionary containing the current configuration
+        """
+        return {
+            'embedding_model': self.embedding_model.__class__.__name__,
+            'vector_store': self.vector_store.__class__.__name__,
+            'reranker': self.reranker.__class__.__name__ if self.reranker else None,
+            'llm_model': self.llm.__class__.__name__,
+            'chunking_strategy': self.chunking_strategy.__class__.__name__ if self.chunking_strategy else None,
+            'chunk_size': self.chunk_size,
+            'chunk_overlap': self.chunk_overlap,
+            'top_k': self.top_k
+        }

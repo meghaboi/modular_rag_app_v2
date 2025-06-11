@@ -330,3 +330,31 @@ Return a JSON array of objects, each containing:
 ```
 
 Please analyze each document carefully and provide your reranking as a valid JSON array."""
+
+# Greeting Templates
+GREETING_DETECTION_TEMPLATE = """Analyze if this is a greeting or small talk and provide a friendly response: {query}
+
+## Instructions:
+1. Determine if the input is a greeting or small talk
+2. Assess your confidence in this determination
+3. Generate a friendly, appropriate response if it is a greeting
+
+## Guidelines:
+- Consider common greeting patterns and small talk phrases
+- Be confident in your determination (confidence score should reflect certainty)
+- Keep responses warm and welcoming
+- Maintain a professional yet friendly tone
+
+## Examples of greetings and small talk:
+- Hi, Hello, Hey, Hey there
+- Good morning, Good afternoon, Good evening
+- How are you?, How's it going?, What's up?
+- Nice to meet you, Pleasure to meet you
+- How was your weekend?, How's your day?
+- Thanks, Thank you, Bye, See you later, Goodbye
+- Hope you're doing well, Hope you're having a good day
+- What's new?, How have you been?
+- Take care, Have a great day
+- Nice weather today, Lovely day isn't it?
+- Hi James, Hi Anna
+"""

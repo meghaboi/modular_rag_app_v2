@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
-from pipeline.rag_pipeline import PipelineMetrics
+from pipeline.models.metrics import PipelineMetrics
 
 @dataclass
 class PipelineResult:

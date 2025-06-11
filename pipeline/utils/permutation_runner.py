@@ -40,7 +40,7 @@ class PermutationRunner:
         ]
         rerankers = [r for r in RerankerModelType if r != RerankerModelType.NONE] + [RerankerModelType.NONE]
         llm_models = [
-            LLMModelType.CLAUDE_37_SONNET, LLMModelType.GEMINI
+            LLMModelType.CLAUDE_4_SONNET, LLMModelType.GEMINI
         ]
 
         all_permutations = list(itertools.product(embedding_models, vector_stores, rerankers, llm_models))

@@ -32,12 +32,15 @@ def is_greeting(query: str) -> tuple[bool, str]:
             }
         }
 
+        greeting_provider = get_provider('greeting')
+        prompt_message = greeting_provider.get_prompt('greeting_detection', query=query)
+
         response = client.messages.create(
             model="claude-3-sonnet-20240229",
             max_tokens=1024,
             messages=[{
                 "role": "user",
-                "content": f"Analyze if this is a greeting or small talk and provide a friendly response: {query}"
+                "content": prompt_message
             }],
             tools=[greeting_function]
         )
