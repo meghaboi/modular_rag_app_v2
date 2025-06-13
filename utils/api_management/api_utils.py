@@ -24,7 +24,7 @@ def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_e
     mistral_needed = (embedding_model_enum == EmbeddingModelType.MISTRAL or
                       llm_enum in [LLMModelType.MISTRAL_LARGE, LLMModelType.MISTRAL_MEDIUM, LLMModelType.MISTRAL_SMALL])
     voyage_needed = (embedding_model_enum == EmbeddingModelType.VOYAGE or
-                     reranker_enum in [RerankerModelType.VOYAGE, RerankerModelType.VOYAGE_2])
+                     reranker_enum in [RerankerModelType.VOYAGE_3, RerankerModelType.VOYAGE_2])
 
     if openai_needed:
         key_name = "OpenAI API Key"

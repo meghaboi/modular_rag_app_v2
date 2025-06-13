@@ -28,7 +28,7 @@ class RerankerModelType(Enum):
     COHERE_V2 = "Cohere-V2"
     COHERE_V3 = "Cohere-V3"
     COHERE_MULTILINGUAL = "Cohere-Multilingual"
-    VOYAGE = "Voyage"
+    VOYAGE_3 = "Voyage-3"
     VOYAGE_2 = "Voyage-2"
     JINA = "Jina"
     JINA_V2 = "Jina-v2"

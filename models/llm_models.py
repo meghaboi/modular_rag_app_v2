@@ -152,7 +152,7 @@ class OpenAIGPT(StreamingLLM):
 class GeminiLLM(StreamingLLM):
     """Google Gemini model implementation with streaming support"""
 
-    def __init__(self, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, model_name: str = "gemini-2.5-pro-preview-06-05"):
         """Initialize the Google Gemini model"""
         super().__init__()
         gemini_api_key = os.environ.get("GEMINI_API_KEY")

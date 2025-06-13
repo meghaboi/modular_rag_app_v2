@@ -54,7 +54,7 @@ class RAGPipeline:
     
     def index_documents(self, file_path: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> None:
         """
-        Index documents from a file.
+        Index documents from a file using the configured chunking strategy.
         
         Args:
             file_path: Path to the document file
@@ -65,19 +65,36 @@ class RAGPipeline:
             RAGPipelineExecutionError: If indexing fails
         """
         try:
+            total_start_time = time.time()
+            
             # Read file
+            read_start_time = time.time()
             with open(file_path, 'r', encoding='utf-8') as f:
                 text = f.read()
+            read_time = time.time() - read_start_time
+            logging.info(f"File reading took {read_time:.2f} seconds")
             
-            # Split text into chunks using the selected strategy
+            # Read and chunk documents
+            chunking_start_time = time.time()
             chunks = self.chunking_strategy.chunk_text(text, chunk_size, chunk_overlap)
-            self.documents = chunks
+            chunking_time = time.time() - chunking_start_time
+            logging.info(f"Document chunking took {chunking_time:.2f} seconds")
             
-            # Get embeddings for chunks
+            # Generate embeddings
+            embedding_start_time = time.time()
             embeddings = self.embedding_model.embed_documents(chunks)
+            embedding_time = time.time() - embedding_start_time
+            logging.info(f"Embedding generation took {embedding_time:.2f} seconds")
             
-            # Add chunks to vector store
+            # Store in vector store
+            storage_start_time = time.time()
             self.vector_store.add_documents(chunks, embeddings)
+            storage_time = time.time() - storage_start_time
+            logging.info(f"Vector storage took {storage_time:.2f} seconds")
+            
+            total_time = time.time() - total_start_time
+            logging.info(f"Total document indexing took {total_time:.2f} seconds")
+            
         except Exception as e:
             raise RAGPipelineExecutionError(f"Failed to index documents: {str(e)}")
     
@@ -151,24 +168,39 @@ class RAGPipeline:
             RAGPipelineExecutionError: If execution fails
         """
         try:
-            start_time = time.time()
+            total_start_time = time.time()
             
             # Get context
+            context_start_time = time.time()
             retrieved_texts = self.retrieve_context(query)
+            context_time = time.time() - context_start_time
+            logging.info(f"Context retrieval took {context_time:.2f} seconds")
             
             # Combine retrieved documents
+            combine_start_time = time.time()
             context_str = "\n\n".join(retrieved_texts)
+            combine_time = time.time() - combine_start_time
+            logging.info(f"Context combination took {combine_time:.2f} seconds")
             
             # Generate response
+            generation_start_time = time.time()
             response_text, usage_info = self.llm.generate(
                 prompt=query,
                 context=context_str,
                 evaluation_mode=self.evaluation_mode,
                 system_prompt_override=system_prompt_override
             )
+            generation_time = time.time() - generation_start_time
+            logging.info(f"Response generation took {generation_time:.2f} seconds")
             
             # Calculate metrics
-            self._metrics = self._calculate_metrics(start_time, usage_info)
+            metrics_start_time = time.time()
+            self._metrics = self._calculate_metrics(total_start_time, usage_info)
+            metrics_time = time.time() - metrics_start_time
+            logging.info(f"Metrics calculation took {metrics_time:.2f} seconds")
+            
+            total_time = time.time() - total_start_time
+            logging.info(f"Total pipeline execution took {total_time:.2f} seconds")
             
             return response_text, retrieved_texts, self._metrics.to_dict()
         except Exception as e:

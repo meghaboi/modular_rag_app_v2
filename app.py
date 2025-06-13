@@ -45,6 +45,8 @@ if 'llm_model' not in st.session_state:
     st.session_state.llm_model = DEFAULT_LLM_MODEL.value
 if 'chunking_strategy' not in st.session_state:
     st.session_state.chunking_strategy = DEFAULT_CHUNKING_STRATEGY.value
+if 'config_changed' not in st.session_state:
+    st.session_state.config_changed = False
 if 'hybrid_alpha' not in st.session_state:
     st.session_state.hybrid_alpha = DEFAULT_HYBRID_ALPHA
 if 'chunk_size' not in st.session_state:

@@ -14,6 +14,7 @@ from utils.enums import (
     VectorStoreType,
     ChunkingStrategyType
 )
+from pipeline.utils.pipeline_initializer import PipelineInitializer
 
 
 class EvaluationInterface:
@@ -26,6 +27,9 @@ class EvaluationInterface:
                             "(ground truth) to see how well various RAG configurations perform.")
         self.pipeline_warning = "💡 Pipeline isn't active. Hit 'Initialize JEFF' in the sidebar."
         self.file_warning = "💡 Upload a document first using the sidebar!"
+        
+        # Set evaluation mode flag
+        st.session_state.is_evaluation_mode = True
 
     def display(self):
         """Display the RAG evaluation interface."""
@@ -83,13 +87,37 @@ class EvaluationInterface:
             st.error(f"Error reading current configuration: {e}")
             return
 
-        missing_keys = check_api_keys(*config_enums)
+        # Only pass the first 4 enums to check_api_keys
+        missing_keys = check_api_keys(
+            embedding_model_enum=config_enums[0],
+            vector_store_enum=config_enums[1],
+            reranker_enum=config_enums[2],
+            llm_enum=config_enums[3]
+        )
         if missing_keys:
             st.error(f"Missing keys for current config: {', '.join(missing_keys)}")
             return
 
         with st.spinner("Evaluating current configuration..."):
-            self._run_single_evaluation(user_query, ground_truth, col2)
+            # Reinitialize pipeline with current configuration
+            pipeline_instance = PipelineInitializer.initialize_pipeline(
+                file_path=st.session_state.file_path,
+                embedding_model_enum=config_enums[0],
+                vector_store_enum=config_enums[1],
+                reranker_enum=config_enums[2],
+                llm_enum=config_enums[3],
+                chunking_strategy_enum=config_enums[4],
+                hybrid_alpha=st.session_state.hybrid_alpha,
+                chunk_size=st.session_state.chunk_size,
+                chunk_overlap=st.session_state.chunk_overlap,
+                top_k=st.session_state.top_k
+            )
+            
+            if pipeline_instance:
+                st.session_state.pipeline = pipeline_instance
+                self._run_single_evaluation(user_query, ground_truth, col2)
+            else:
+                st.error("Failed to initialize pipeline with current configuration")
 
     def _validate_prerequisites(self) -> bool:
         """Validate that prerequisites are met for evaluation."""
@@ -107,7 +135,8 @@ class EvaluationInterface:
             EmbeddingModelType.from_string(st.session_state.embedding_model),
             VectorStoreType.from_string(st.session_state.vector_store),
             RerankerModelType.from_string(st.session_state.reranker),
-            LLMModelType.from_string(st.session_state.llm_model)
+            LLMModelType.from_string(st.session_state.llm_model),
+            ChunkingStrategyType.from_string(st.session_state.chunking_strategy)
         )
 
     def _run_single_evaluation(self, user_query: str, ground_truth: str, col2):
@@ -324,16 +353,16 @@ class EvaluationInterface:
     def _display_results_table(self):
         """Display the results table."""
         results_to_display = st.session_state.permutation_df.copy()
-        results_to_display['avg_score_numeric'] = results_to_display['avg_score'].fillna(-1)
+        results_to_display['avg_score_numeric'] = results_to_display['avg_custom_score'].fillna(-1)
         top_results = results_to_display.sort_values('avg_score_numeric', ascending=False).head(10)
 
         display_cols = ["embedding_model", "vector_store", "reranker", "llm_model",
-                        "chunking_strategy", "avg_score", "elapsed_time"]
+                        "chunking_strategy", "avg_custom_score", "elapsed_time"]
 
         metric_cols_exist = sorted([col for col in results_to_display.columns if col.startswith("metric_")])
         display_cols.extend(metric_cols_exist)
 
-        format_dict = {'avg_score': "{:.2f}", 'elapsed_time': "{:.2f}"}
+        format_dict = {'avg_custom_score': "{:.2f}", 'elapsed_time': "{:.2f}"}
         for col in metric_cols_exist:
             format_dict[col] = "{:.2f}"
 

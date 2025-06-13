@@ -258,6 +258,9 @@ def display_settings_panel():
             except ValueError:
                 return default_index
 
+        def on_config_change():
+            st.session_state.config_changed = True
+
         if st.session_state.mode == "chat":
             st.sidebar.text(f"Embedding Model: {DEFAULT_EMBEDDING_MODEL.value}")
             st.session_state.embedding_model = DEFAULT_EMBEDDING_MODEL.value
@@ -266,95 +269,82 @@ def display_settings_panel():
                 "Embedding Model",
                 options=embedding_options,
                 index=get_safe_index(embedding_options, st.session_state.embedding_model),
-                key="sb_embedding_model"
+                key="sb_embedding_model",
+                on_change=on_config_change
             )
 
-        if st.session_state.mode == "chat":
-            st.sidebar.text(f"Re-ranker Model: {st.session_state.get('reranker', DEFAULT_RERANKER_MODEL.value)}")
-            st.sidebar.text(f"LLM Model: {st.session_state.get('llm_model', DEFAULT_LLM_MODEL.value)}")
-            st.sidebar.text(f"Vector Store: {st.session_state.get('vector_store', DEFAULT_VECTOR_STORE.value)}")
-            st.sidebar.text(
-                f"Chunking Strategy: {st.session_state.get('chunking_strategy', DEFAULT_CHUNKING_STRATEGY.value)}")
-            st.sidebar.text(f"Chunk Size: {st.session_state.get('chunk_size', DEFAULT_CHUNK_SIZE)}")
-            st.sidebar.text(f"Chunk Overlap: {st.session_state.get('chunk_overlap', DEFAULT_CHUNK_OVERLAP)}")
-            st.sidebar.text(f"Top K: {st.session_state.get('top_k', DEFAULT_TOP_K)}")
-        else:
-            st.session_state.reranker = st.selectbox(
-                "Re-ranker Model",
-                options=reranker_options,
-                index=get_safe_index(reranker_options, st.session_state.reranker),
-                key="sb_reranker"
-            )
-            st.session_state.llm_model = st.selectbox(
-                "LLM Model",
-                options=llm_options,
-                index=get_safe_index(llm_options, st.session_state.llm_model),
-                key="sb_llm_model"
-            )
-            st.session_state.vector_store = st.selectbox(
-                "Vector Store",
-                options=vector_store_options,
-                index=get_safe_index(vector_store_options, st.session_state.vector_store),
-                key="sb_vector_store"
-            )
-            st.session_state.chunking_strategy = st.selectbox(
-                "Chunking Strategy",
-                options=chunking_strategy_options,
-                index=get_safe_index(chunking_strategy_options, st.session_state.chunking_strategy),
-                key="sb_chunking_strategy"
-            )
+        st.session_state.vector_store = st.selectbox(
+            "Vector Store",
+            options=vector_store_options,
+            index=get_safe_index(vector_store_options, st.session_state.vector_store),
+            key="sb_vector_store",
+            on_change=on_config_change
+        )
 
-            # Get subject-specific configuration
-            subject_config = get_subject_config(selected_subject)
+        st.session_state.reranker = st.selectbox(
+            "Reranker",
+            options=reranker_options,
+            index=get_safe_index(reranker_options, st.session_state.reranker),
+            key="sb_reranker",
+            on_change=on_config_change
+        )
 
-            # Update slider values based on subject configuration
-            st.session_state.chunk_size = st.slider(
-                "Chunk Size (tokens)",
-                min_value=100,
-                max_value=2000,
-                value=subject_config.chunk_size,
-                step=50,
-                key="sb_chunk_size",
-                help="Maximum number of tokens per chunk"
+        st.session_state.llm_model = st.selectbox(
+            "LLM Model",
+            options=llm_options,
+            index=get_safe_index(llm_options, st.session_state.llm_model),
+            key="sb_llm_model",
+            on_change=on_config_change
+        )
+
+        st.session_state.chunking_strategy = st.selectbox(
+            "Chunking Strategy",
+            options=chunking_strategy_options,
+            index=get_safe_index(chunking_strategy_options, st.session_state.chunking_strategy),
+            key="sb_chunking_strategy",
+            on_change=on_config_change
+        )
+
+        st.session_state.chunk_size = st.number_input(
+            "Chunk Size",
+            min_value=100,
+            max_value=2000,
+            value=st.session_state.chunk_size,
+            step=100,
+            key="sb_chunk_size",
+            on_change=on_config_change
+        )
+
+        st.session_state.chunk_overlap = st.number_input(
+            "Chunk Overlap",
+            min_value=0,
+            max_value=500,
+            value=st.session_state.chunk_overlap,
+            step=50,
+            key="sb_chunk_overlap",
+            on_change=on_config_change
+        )
+
+        st.session_state.top_k = st.number_input(
+            "Top K",
+            min_value=1,
+            max_value=10,
+            value=st.session_state.top_k,
+            step=1,
+            key="sb_top_k",
+            on_change=on_config_change
+        )
+
+        if st.session_state.vector_store == VectorStoreType.HYBRID.value:
+            st.session_state.hybrid_alpha = st.slider(
+                "Hybrid Alpha",
+                min_value=0.0,
+                max_value=1.0,
+                value=st.session_state.get('hybrid_alpha', DEFAULT_HYBRID_ALPHA),
+                step=0.1,
+                key="sb_hybrid_alpha",
+                on_change=on_config_change
             )
-
-            st.session_state.chunk_overlap = st.slider(
-                "Chunk Overlap (tokens)",
-                min_value=0,
-                max_value=500,
-                value=subject_config.chunk_overlap,
-                step=25,
-                key="sb_chunk_overlap",
-                help="Number of tokens to overlap between chunks"
-            )
-
-            st.session_state.top_k = st.slider(
-                "Docs to Retrieve (Top K)",
-                min_value=1,
-                max_value=15,
-                value=subject_config.top_k if hasattr(subject_config, 'top_k') else DEFAULT_TOP_K,
-                step=1,
-                key="sb_top_k"
-            )
-
-            try:
-                selected_vector_store_enum = VectorStoreType.from_string(st.session_state.vector_store)
-            except ValueError:
-                selected_vector_store_enum = None
-
-            if selected_vector_store_enum == VectorStoreType.HYBRID:
-                st.caption("Hybrid search mixes keyword and vector search.")
-                st.session_state.hybrid_alpha = st.slider(
-                    "Vector Weight (alpha)",
-                    0.0,
-                    1.0,
-                    subject_config.hybrid_alpha if hasattr(subject_config, 'hybrid_alpha') else DEFAULT_HYBRID_ALPHA,
-                    0.05,
-                    key="sb_hybrid_alpha",
-                    help="1.0=vector, 0.0=keyword"
-                )
-                kw_weight = 1.0 - float(st.session_state.get('hybrid_alpha', 0.5))
-                st.write(f"Keyword Weight: {kw_weight:.2f}")
 
         if st.session_state.pipeline and hasattr(st.session_state.pipeline, 'last_evaluation_scores'):
             st.markdown("---")
@@ -432,7 +422,8 @@ def display_settings_panel():
     st.sidebar.markdown("---")
 
     # Initialize JEFF button
-    disable_init = not st.session_state.file_path or st.session_state.pipeline is not None
+    disable_init = (not st.session_state.file_path or 
+                   (st.session_state.pipeline is not None and not st.session_state.config_changed))
     if st.sidebar.button("🚀 Initialize JEFF", key="init_pipeline", help="Load textbook with current settings.",
                          disabled=disable_init):
 
@@ -468,6 +459,7 @@ def display_settings_panel():
 
             if pipeline_instance:
                 st.session_state.pipeline = pipeline_instance
+                st.session_state.config_changed = False  # Reset the config changed flag
                 st.sidebar.success("JEFF is ready!")
                 st.rerun()
             else:

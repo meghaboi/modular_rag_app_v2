@@ -89,7 +89,7 @@ class CohereRerankerV2(Reranker):
             results = self._client.rerank(
                 query=query,
                 documents=documents,
-                model="rerank-english-v2.0",
+                model="rerank-english-v3.0",
                 top_n=len(documents)
             )
 
@@ -128,7 +128,7 @@ class CohereRerankerV3(Reranker):
             results = self._client.rerank(
                 query=query,
                 documents=documents,
-                model="rerank-english-v3.0",
+                model="rerank-v3.5",
                 top_n=len(documents)
             )
 
@@ -335,8 +335,8 @@ class RerankerFactory:
             return CohereRerankerV3()
         elif reranker_name == RerankerModelType.COHERE_MULTILINGUAL:
             return CohereRerankerMultilingual()
-        elif reranker_name == RerankerModelType.VOYAGE:
-            return VoyageReranker(model_name="rerank-lite-1")
+        elif reranker_name == RerankerModelType.VOYAGE_3:
+            return VoyageReranker(model_name="rerank-2")
         elif reranker_name == RerankerModelType.VOYAGE_2:
             return VoyageReranker(model_name="rerank-2")
         elif reranker_name == RerankerModelType.JINA:

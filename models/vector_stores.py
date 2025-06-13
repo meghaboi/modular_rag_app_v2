@@ -38,7 +38,7 @@ class FAISSVectorStore(VectorStore):
         
         self._documents = documents
         
-        # Convert embeddings to numpy array
+        # Convert embeddings to a numpy array
         embeddings_np = np.array(embeddings).astype('float32')
         self._dimension = embeddings_np.shape[1]
         

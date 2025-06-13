@@ -17,18 +17,29 @@ from utils.enums import (
     VectorStoreType,
     ChunkingStrategyType
 )
-from utils.analysis.analysis_utils import determine_prompt_nature # Added import
+from utils.analysis.analysis_utils import determine_prompt_nature
+
+# Cache for nature determination results
+_nature_cache = {}
 
 def get_config_by_prompt_nature(query: str) -> SubjectConfig:
     """
     Determines the prompt nature and retrieves the corresponding SubjectConfig.
+    Uses caching to avoid repeated calls for the same query.
     """
+    # Check cache first
+    if query in _nature_cache:
+        logging.info(f"Using cached nature determination for query: '{query[:50]}...'")
+        return _nature_cache[query]
+    
     prompt_nature = determine_prompt_nature(query)
     logging.info(f"Determined prompt nature: {prompt_nature} for query: '{query[:50]}...'")
     
     config = get_subject_config(prompt_nature)
     logging.info(f"Using configuration for '{prompt_nature}': ChunkSize={config.chunk_size}, Overlap={config.chunk_overlap}, TopK={config.top_k}, Alpha={config.hybrid_alpha}")
     
+    # Cache the result
+    _nature_cache[query] = config
     return config
 
 def update_rag_configuration(query: str, pipeline, subject: Optional[str] = None) -> Optional[bool]:
@@ -38,6 +49,11 @@ def update_rag_configuration(query: str, pipeline, subject: Optional[str] = None
     Returns True if successful, False if failed, None if no update needed.
     """
     try:
+        # Skip nature-based updates in evaluation mode
+        if st.session_state.get('is_evaluation_mode', False):
+            logging.info("Skipping nature-based configuration update in evaluation mode")
+            return None
+
         nature_config = get_config_by_prompt_nature(query)
 
         if not nature_config:
