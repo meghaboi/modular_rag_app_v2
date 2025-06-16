@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Callable, Iterator, Tuple
 import os
+import logging
 from openai import OpenAI 
 import google.generativeai as genai 
 from anthropic import Anthropic 
@@ -9,6 +10,10 @@ from mistralai.models import UserMessage, SystemMessage
 
 from utils.enums import LLMModelType
 from prompts import get_provider
+
+# Added logging for better debugging (safe improvement)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class StreamingLLM(ABC):
     """Abstract base class for streaming LLM models"""
@@ -112,7 +117,7 @@ class OpenAIGPT(StreamingLLM):
             self._set_last_call_usage(usage, "openai")
             return response.choices[0].message.content, self._last_call_usage
         except Exception as e:
-            print(f"Error during OpenAI API call: {e}")
+            logger.error(f"Error during OpenAI API call: {e}")  # Changed from print to logger
             self._set_last_call_usage(None, "openai")
             return "Error: Could not get response from model.", None
     
@@ -146,7 +151,7 @@ class OpenAIGPT(StreamingLLM):
                 if chunk.choices[0].delta.content is not None:
                     yield chunk.choices[0].delta.content
         except Exception as e:
-            print(f"Error during OpenAI streaming API call: {e}")
+            logger.error(f"Error during OpenAI streaming API call: {e}")  # Changed from print to logger
             yield "Error: Could not stream response from model."
 
 class GeminiLLM(StreamingLLM):
@@ -265,7 +270,7 @@ class GeminiLLM(StreamingLLM):
                     return "".join(part.text for part in response.candidates[0].content.parts), None
             except:
                 pass
-            print(f"Error during Gemini API call: {e}")
+            logger.error(f"Error during Gemini API call: {e}")  # Changed from print to logger
             return "Error: Could not get response from model.", None
 
     def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False,
@@ -317,7 +322,7 @@ class GeminiLLM(StreamingLLM):
                         continue
 
         except Exception as e:
-            print(f"Error during Gemini streaming API call: {e}")
+            logger.error(f"Error during Gemini streaming API call: {e}")  # Changed from print to logger
             yield "Error: Could not stream response from model."
 
 class ClaudeLLM(StreamingLLM):
@@ -367,7 +372,7 @@ class ClaudeLLM(StreamingLLM):
             self._set_last_call_usage(usage, "anthropic")
             return response.content[0].text, self._last_call_usage
         except Exception as e:
-            print(f"Error during Anthropic API call: {e}")
+            logger.error(f"Error during Anthropic API call: {e}")  # Changed from print to logger
             self._set_last_call_usage(None, "anthropic")
             return "Error: Could not get response from model.", None
 
@@ -406,7 +411,7 @@ class ClaudeLLM(StreamingLLM):
                 if final_message and final_message.usage:
                     self._set_last_call_usage(final_message.usage, "anthropic")
         except Exception as e:
-            print(f"Error during Anthropic streaming API call: {e}")
+            logger.error(f"Error during Anthropic streaming API call: {e}")  # Changed from print to logger
             self._set_last_call_usage(None, "anthropic") # Clear usage on error
             yield "Error: Could not stream response from model."
 
@@ -453,7 +458,7 @@ class MistralLLM(StreamingLLM):
             self._set_last_call_usage(usage, "mistral")
             return chat_response.choices[0].message.content, self._last_call_usage
         except Exception as e:
-            print(f"Error during Mistral API call: {e}")
+            logger.error(f"Error during Mistral API call: {e}")  # Changed from print to logger
             self._set_last_call_usage(None, "mistral")
             return "Error: Could not get response from model.", None
 
@@ -485,7 +490,7 @@ class MistralLLM(StreamingLLM):
                 if chunk.choices[0].delta.content is not None:
                     yield chunk.choices[0].delta.content
         except Exception as e:
-            print(f"Error during Mistral streaming API call: {e}")
+            logger.error(f"Error during Mistral streaming API call: {e}")  # Changed from print to logger
             yield "Error: Could not stream response from model."
 
 class LLMFactory:
