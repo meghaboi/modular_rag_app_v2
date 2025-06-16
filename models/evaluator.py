@@ -7,6 +7,7 @@ import json
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
+from prompts.prompt_providers import get_provider
 
 from utils.enums import EvaluationBackendType, EvaluationMetricType
 
@@ -53,6 +54,7 @@ class BuiltinEvaluator(BaseEvaluator):
             raise ValueError("OpenAI API key required for built-in evaluation")
         
         self._evaluator_model = ChatOpenAI(model_name="gpt-4")
+        self._prompt_provider = get_provider('evaluator')
     
     def evaluate(self, query: str, response: str, contexts: List[str], 
                  ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
@@ -77,34 +79,13 @@ class BuiltinEvaluator(BaseEvaluator):
     
     def _evaluate_answer_relevance(self, query: str, response: str, ground_truth: Optional[str] = None) -> float:
         """Evaluate the relevance of the answer to the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
-        template = """
-        Evaluate the relevance of the answer to the question on a scale of 1 to 5.
-        
-        Question: {query}
-        Answer: {response}
-        """
-        
-        if ground_truth:
-            template += """
-            Ground Truth Answer: {ground_truth}
-            
-            Consider both how relevant the answer is to the question and how well it matches the ground truth.
-            """
-            
-        template += """
-        Scoring guidelines:
-        1: The answer is completely irrelevant to the question.
-        2: The answer is slightly relevant but misses the main point.
-        3: The answer is moderately relevant but incomplete.
-        4: The answer is relevant and mostly complete.
-        5: The answer is highly relevant and complete.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
+        prompt = self._prompt_provider.get_prompt(
+            'answer_relevance',
+            query=query,
+            response=response,
+            ground_truth=ground_truth
+        )
+        prompt_template = ChatPromptTemplate.from_template(prompt)
         
         if ground_truth:
             chain = prompt_template | self._evaluator_model
@@ -129,29 +110,13 @@ class BuiltinEvaluator(BaseEvaluator):
     
     def _evaluate_context_relevance(self, query: str, contexts: List[str]) -> float:
         """Evaluate the relevance of the contexts to the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
-        template = """
-        Evaluate the relevance of the provided contexts to the question on a scale of 1 to 5.
-        
-        Question: {query}
-        
-        Contexts:
-        {contexts}
-        
-        Scoring guidelines:
-        1: The contexts are completely irrelevant to the question.
-        2: The contexts are slightly relevant but miss important information.
-        3: The contexts are moderately relevant but incomplete.
-        4: The contexts are relevant and contain most of the necessary information.
-        5: The contexts are highly relevant and contain all necessary information.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
+        prompt = self._prompt_provider.get_prompt(
+            'context_relevance',
+            query=query,
+            contexts=context_text
+        )
+        prompt_template = ChatPromptTemplate.from_template(prompt)
         chain = prompt_template | self._evaluator_model
         response = chain.invoke({
             "query": query,
@@ -167,29 +132,13 @@ class BuiltinEvaluator(BaseEvaluator):
     
     def _evaluate_groundedness(self, response: str, contexts: List[str]) -> float:
         """Evaluate if the response is grounded in the provided contexts"""
-        from langchain.prompts import ChatPromptTemplate
-        
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
-        template = """
-        Evaluate the groundedness of the answer in the provided contexts on a scale of 1 to 5.
-        
-        Answer: {response}
-        
-        Contexts:
-        {contexts}
-        
-        Scoring guidelines:
-        1: The answer contains information not present in the contexts (hallucination).
-        2: The answer has significant content not grounded in the contexts.
-        3: The answer is partially grounded in the contexts but includes some ungrounded statements.
-        4: The answer is mostly grounded in the contexts with minor extrapolations.
-        5: The answer is completely grounded in the contexts with no hallucinations.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
+        prompt = self._prompt_provider.get_prompt(
+            'groundedness',
+            response=response,
+            contexts=context_text
+        )
+        prompt_template = ChatPromptTemplate.from_template(prompt)
         chain = prompt_template | self._evaluator_model
         response_obj = chain.invoke({
             "response": response,
@@ -205,29 +154,13 @@ class BuiltinEvaluator(BaseEvaluator):
     
     def _evaluate_faithfulness(self, response: str, contexts: List[str]) -> float:
         """Evaluate the faithfulness of the response to the provided contexts"""
-        from langchain.prompts import ChatPromptTemplate
-        
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
-        template = """
-        Evaluate the faithfulness of the answer to the provided contexts on a scale of 1 to 5.
-        
-        Answer: {response}
-        
-        Contexts:
-        {contexts}
-        
-        Scoring guidelines:
-        1: The answer contradicts or misrepresents the information in the contexts.
-        2: The answer includes significant misinterpretations of the contexts.
-        3: The answer is partially faithful but includes some misinterpretations.
-        4: The answer is mostly faithful with minor inaccuracies.
-        5: The answer is completely faithful to the information in the contexts.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
+        prompt = self._prompt_provider.get_prompt(
+            'faithfulness',
+            response=response,
+            contexts=context_text
+        )
+        prompt_template = ChatPromptTemplate.from_template(prompt)
         chain = prompt_template | self._evaluator_model
         response_obj = chain.invoke({
             "response": response,
@@ -481,6 +414,7 @@ class LangSmithEvaluator(BaseEvaluator):
         
         # Initialize evaluator model for metrics
         self.evaluator_model = ChatOpenAI(model_name="gpt-4")
+        self._prompt_provider = get_provider('evaluator')
         
         # Define supported metrics
         self._supported_metrics = [
@@ -515,32 +449,12 @@ class LangSmithEvaluator(BaseEvaluator):
         """Evaluate the relevance of the answer to the query using LangSmith-inspired prompts"""
         from langchain.prompts import ChatPromptTemplate
         
-        # Use LangSmith-style prompting but directly with the LLM
-        template = """
-        You are an expert evaluator of RAG (Retrieval-Augmented Generation) systems.
-        Your task is to evaluate the relevance of an answer to a given question.
-        
-        Question: {query}
-        Answer: {response}
-        """
-        
-        if ground_truth:
-            template += """
-            Ground Truth Answer: {ground_truth}
-            
-            Consider both how relevant the answer is to the question and how well it matches the ground truth.
-            """
-            
-        template += """
-        Scoring guidelines:
-        1: The answer is completely irrelevant to the question.
-        2: The answer is slightly relevant but misses the main point.
-        3: The answer is moderately relevant but incomplete.
-        4: The answer is relevant and mostly complete.
-        5: The answer is highly relevant and complete.
-        
-        Your response must be exactly one number between 1 and 5, with no additional explanation.
-        """
+        template = self._prompt_provider.get_prompt(
+            'answer_relevance',
+            query=query,
+            response=response,
+            ground_truth=ground_truth
+        )
         
         prompt_template = ChatPromptTemplate.from_template(template)
         
@@ -571,24 +485,11 @@ class LangSmithEvaluator(BaseEvaluator):
         
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
         
-        template = """
-        You are an expert evaluator of RAG (Retrieval-Augmented Generation) systems.
-        Your task is to evaluate how relevant the retrieved contexts are to the question.
-        
-        Question: {query}
-        
-        Retrieved Contexts:
-        {contexts}
-        
-        Scoring guidelines:
-        1: The contexts are completely irrelevant to the question.
-        2: The contexts are slightly relevant but miss important information.
-        3: The contexts are moderately relevant but incomplete.
-        4: The contexts are relevant and contain most of the necessary information.
-        5: The contexts are highly relevant and contain all necessary information.
-        
-        Your response must be exactly one number between 1 and 5, with no additional explanation.
-        """
+        template = self._prompt_provider.get_prompt(
+            'context_relevance',
+            query=query,
+            contexts=context_text
+        )
         
         prompt_template = ChatPromptTemplate.from_template(template)
         chain = prompt_template | self.evaluator_model
@@ -610,24 +511,11 @@ class LangSmithEvaluator(BaseEvaluator):
         
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
         
-        template = """
-        You are an expert evaluator of RAG (Retrieval-Augmented Generation) systems.
-        Your task is to evaluate if the generated answer is grounded in the provided contexts.
-        
-        Answer: {response}
-        
-        Retrieved Contexts:
-        {contexts}
-        
-        Scoring guidelines:
-        1: The answer contains information not present in the contexts (hallucination).
-        2: The answer has significant content not grounded in the contexts.
-        3: The answer is partially grounded in the contexts but includes some ungrounded statements.
-        4: The answer is mostly grounded in the contexts with minor extrapolations.
-        5: The answer is completely grounded in the contexts with no hallucinations.
-        
-        Your response must be exactly one number between 1 and 5, with no additional explanation.
-        """
+        template = self._prompt_provider.get_prompt(
+            'groundedness',
+            response=response,
+            contexts=context_text
+        )
         
         prompt_template = ChatPromptTemplate.from_template(template)
         chain = prompt_template | self.evaluator_model
@@ -649,24 +537,11 @@ class LangSmithEvaluator(BaseEvaluator):
         
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
         
-        template = """
-        You are an expert evaluator of RAG (Retrieval-Augmented Generation) systems.
-        Your task is to evaluate how faithful the generated answer is to the information in the provided contexts.
-        
-        Answer: {response}
-        
-        Retrieved Contexts:
-        {contexts}
-        
-        Scoring guidelines:
-        1: The answer contradicts or misrepresents the information in the contexts.
-        2: The answer includes significant misinterpretations of the contexts.
-        3: The answer is partially faithful but includes some misinterpretations.
-        4: The answer is mostly faithful with minor inaccuracies.
-        5: The answer is completely faithful to the information in the contexts.
-        
-        Your response must be exactly one number between 1 and 5, with no additional explanation.
-        """
+        template = self._prompt_provider.get_prompt(
+            'faithfulness',
+            response=response,
+            contexts=context_text
+        )
         
         prompt_template = ChatPromptTemplate.from_template(template)
         chain = prompt_template | self.evaluator_model
@@ -699,52 +574,45 @@ class LangSmithEvaluator(BaseEvaluator):
 
 class DeepEvaluator(BaseEvaluator):
     """Evaluator using smaller, specialized LLMs for different metrics"""
-    
+
     def __init__(self, metrics: List[str]):
         """Initialize the DeepEvaluator with selected metrics"""
         super().__init__(metrics)
-        
+
         try:
             from langchain_openai import ChatOpenAI
             from langchain_anthropic import ChatAnthropic
             from langchain_mistralai import ChatMistralAI
         except ImportError as e:
             raise ValueError(f"Required library not installed: {e}")
-        
-        # Check for required API keys
+
         if not os.environ.get("OPENAI_API_KEY"):
             raise ValueError("OpenAI API key required for DeepEvaluator")
-        
-        # Initialize different models for different evaluation tasks
-        # Using smaller models for faster, more cost-effective evaluation
+
         self._general_evaluator = ChatOpenAI(model_name="gpt-3.5-turbo")
-        
-        # For metrics that need more careful analysis, use a more capable model
         self._deep_evaluator = None
         if os.environ.get("ANTHROPIC_API_KEY"):
             self._deep_evaluator = ChatAnthropic(model="claude-3-haiku-20240307")
         elif os.environ.get("MISTRAL_API_KEY"):
             self._deep_evaluator = ChatMistralAI(model="mistral-small")
         else:
-            # Fallback to OpenAI
             self._deep_evaluator = self._general_evaluator
-        
-        # Create a mapping of metrics to the most appropriate model for evaluation
+
         self._metric_to_model = {
-            "answer_relevance": self._general_evaluator,  # Simple relevance check
-            "context_relevance": self._general_evaluator,  # Simple relevance check
-            "groundedness": self._deep_evaluator,  # Requires deeper analysis
-            "faithfulness": self._deep_evaluator,  # Requires deeper analysis
-            "answer_consistency": self._deep_evaluator,  # Custom metric
-            "context_coverage": self._general_evaluator  # Custom metric
+            "answer_relevance": self._general_evaluator,
+            "context_relevance": self._general_evaluator,
+            "groundedness": self._deep_evaluator,
+            "faithfulness": self._deep_evaluator,
+            "answer_consistency": self._deep_evaluator,
+            "context_coverage": self._general_evaluator
         }
-    
-    def evaluate(self, query: str, response: str, contexts: List[str], 
+        
+        self._prompt_provider = get_provider('evaluator')
+
+    def evaluate(self, query: str, response: str, contexts: List[str],
                  ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """Evaluate RAG system performance using selected metrics with specialized models"""
         results = {}
-        
-        # Evaluate each selected metric with the appropriate model
         for metric in self._metrics:
             try:
                 if metric == "answer_relevance":
@@ -756,33 +624,25 @@ class DeepEvaluator(BaseEvaluator):
                 elif metric == "faithfulness":
                     results[metric] = self._evaluate_faithfulness(response, contexts)
                 elif metric == "answer_consistency":
-                    results[metric] = self._evaluate_answer_consistency(response, contexts)
+                    results[metric] = self._evaluate_answer_consistency(response)
                 elif metric == "context_coverage":
                     results[metric] = self._evaluate_context_coverage(query, contexts)
             except Exception as e:
-                # Log error and use default middle score instead of 0
                 print(f"Error evaluating {metric}: {str(e)}")
-                results[metric] = 3.0  # Default to middle score instead of 0
-        
+                results[metric] = 3.0
+
         if cost is not None:
             results[EvaluationMetricType.COST.value] = cost
-        
         return results
-    
+
     def _extract_score_from_response(self, response_text: str) -> float:
-        """
-        Extract a numeric score from LLM response with improved robustness.
-        Returns a score between 1 and 5, with better fallback handling.
-        """
-        # First try direct extraction of a single number
+        """Extract a numeric score from LLM response with improved robustness."""
         try:
             score = float(response_text.strip())
             return min(max(score, 1), 5)
         except ValueError:
             pass
-        
-        # Try to extract the first number from the text
-        import re
+
         number_matches = re.findall(r'\d+\.?\d*', response_text)
         if number_matches:
             try:
@@ -792,192 +652,81 @@ class DeepEvaluator(BaseEvaluator):
             except ValueError:
                 pass
         
-        # Look for score indicators in text
         lower_text = response_text.lower()
         if "score: " in lower_text:
-            score_text = lower_text.split("score: ")[1].split()[0]
             try:
+                score_text = lower_text.split("score: ")[1].split()[0]
                 score = float(score_text)
                 return min(max(score, 1), 5)
-            except ValueError:
+            except (ValueError, IndexError):
                 pass
-        
-        # Check for textual indicators
-        if "excellent" in lower_text or "perfect" in lower_text or "completely" in lower_text:
-            return 5.0
-        elif "good" in lower_text or "mostly" in lower_text:
-            return 4.0
-        elif "moderate" in lower_text or "partial" in lower_text or "average" in lower_text:
-            return 3.0
-        elif "poor" in lower_text or "slight" in lower_text:
-            return 2.0
-        elif "terrible" in lower_text or "complete" in lower_text and "irrelevant" in lower_text:
-            return 1.0
-            
-        # Default to middle score if all extraction methods fail
+
         return 3.0
-    
+
     def _evaluate_answer_relevance(self, query: str, response: str, ground_truth: Optional[str] = None) -> float:
         """Evaluate the relevance of the answer to the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["answer_relevance"]
+        prompt = self._prompt_provider.get_prompt(
+            'answer_relevance',
+            query=query,
+            response=response,
+            ground_truth=ground_truth
+        )
+        prompt_template = ChatPromptTemplate.from_template(prompt)
+        chain = prompt_template | model
         
-        template = """
-        Evaluate the relevance of the answer to the question on a scale of 1 to 5.
-        
-        Question: {query}
-        Answer: {response}
-        """
-        
+        invoke_params = {"query": query, "response": response}
         if ground_truth:
-            template += """
-            Ground Truth Answer: {ground_truth}
+            invoke_params["ground_truth"] = ground_truth
             
-            Consider both how relevant the answer is to the question and how well it matches the ground truth.
-            """
-            
-        template += """
-        Scoring guidelines:
-        1: The answer is completely irrelevant to the question.
-        2: The answer is slightly relevant but misses the main point.
-        3: The answer is moderately relevant but incomplete.
-        4: The answer is relevant and mostly complete.
-        5: The answer is highly relevant and complete.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
-        
-        if ground_truth:
-            chain = prompt_template | model
-            response_obj = chain.invoke({
-                "query": query,
-                "response": response,
-                "ground_truth": ground_truth
-            })
-        else:
-            chain = prompt_template | model
-            response_obj = chain.invoke({
-                "query": query,
-                "response": response
-            })
-        
-        # Use the improved score extraction method
+        response_obj = chain.invoke(invoke_params)
         return self._extract_score_from_response(response_obj.content)
-    
+
     def _evaluate_context_relevance(self, query: str, contexts: List[str]) -> float:
         """Evaluate the relevance of the contexts to the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["context_relevance"]
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
-        template = """
-        Evaluate the relevance of the provided contexts to the question on a scale of 1 to 5.
-        
-        Question: {query}
-        
-        Contexts:
-        {contexts}
-        
-        Scoring guidelines:
-        1: The contexts are completely irrelevant to the question.
-        2: The contexts are slightly relevant but miss important information.
-        3: The contexts are moderately relevant but incomplete.
-        4: The contexts are relevant and contain most of the necessary information.
-        5: The contexts are highly relevant and contain all necessary information.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
+        prompt = self._prompt_provider.get_prompt(
+            'context_relevance',
+            query=query,
+            contexts=context_text
+        )
+        prompt_template = ChatPromptTemplate.from_template(prompt)
         chain = prompt_template | model
-        response = chain.invoke({
-            "query": query,
-            "contexts": context_text
-        })
-        
-        # Use the improved score extraction method
-        return self._extract_score_from_response(response.content)
-    
+        response_obj = chain.invoke({"query": query, "contexts": context_text})
+        return self._extract_score_from_response(response_obj.content)
+
     def _evaluate_groundedness(self, response: str, contexts: List[str]) -> float:
         """Evaluate if the response is grounded in the provided contexts"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["groundedness"]
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
-        template = """
-        Evaluate the groundedness of the answer in the provided contexts on a scale of 1 to 5.
-        
-        Answer: {response}
-        
-        Contexts:
-        {contexts}
-        
-        Scoring guidelines:
-        1: The answer contains information not present in the contexts (hallucination).
-        2: The answer has significant content not grounded in the contexts.
-        3: The answer is partially grounded in the contexts but includes some ungrounded statements.
-        4: The answer is mostly grounded in the contexts with minor extrapolations.
-        5: The answer is completely grounded in the contexts with no hallucinations.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
+        prompt = self._prompt_provider.get_prompt(
+            'groundedness',
+            response=response,
+            contexts=context_text
+        )
+        prompt_template = ChatPromptTemplate.from_template(prompt)
         chain = prompt_template | model
-        response_obj = chain.invoke({
-            "response": response,
-            "contexts": context_text
-        })
-        
-        # Use the improved score extraction method
+        response_obj = chain.invoke({"response": response, "contexts": context_text})
         return self._extract_score_from_response(response_obj.content)
-    
+
     def _evaluate_faithfulness(self, response: str, contexts: List[str]) -> float:
         """Evaluate the faithfulness of the response to the provided contexts"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["faithfulness"]
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
-        template = """
-        Evaluate the faithfulness of the answer to the provided contexts on a scale of 1 to 5.
-        
-        Answer: {response}
-        
-        Contexts:
-        {contexts}
-        
-        Scoring guidelines:
-        1: The answer contradicts or misrepresents the information in the contexts.
-        2: The answer includes significant misinterpretations of the contexts.
-        3: The answer is partially faithful but includes some misinterpretations.
-        4: The answer is mostly faithful with minor inaccuracies.
-        5: The answer is completely faithful to the information in the contexts.
-        
-        Your response should be just the score (a number between 1 and 5).
-        """
-        
-        prompt_template = ChatPromptTemplate.from_template(template)
+        prompt = self._prompt_provider.get_prompt(
+            'faithfulness',
+            response=response,
+            contexts=context_text
+        )
+        prompt_template = ChatPromptTemplate.from_template(prompt)
         chain = prompt_template | model
-        response_obj = chain.invoke({
-            "response": response,
-            "contexts": context_text
-        })
-        
-        # Use the improved score extraction method
+        response_obj = chain.invoke({"response": response, "contexts": context_text})
         return self._extract_score_from_response(response_obj.content)
-    
-    def _evaluate_answer_consistency(self, response: str, contexts: List[str]) -> float:
+
+    def _evaluate_answer_consistency(self, response: str) -> float:
         """Custom metric: Evaluate the internal consistency of the answer"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["answer_consistency"]
-        
         template = """
         Evaluate the internal consistency of the answer on a scale of 1 to 5.
         
@@ -992,23 +741,15 @@ class DeepEvaluator(BaseEvaluator):
         
         Your response should be just the score (a number between 1 and 5).
         """
-        
         prompt_template = ChatPromptTemplate.from_template(template)
         chain = prompt_template | model
-        response_obj = chain.invoke({
-            "response": response
-        })
-        
-        # Use the improved score extraction method
+        response_obj = chain.invoke({"response": response})
         return self._extract_score_from_response(response_obj.content)
-    
+
     def _evaluate_context_coverage(self, query: str, contexts: List[str]) -> float:
         """Custom metric: Evaluate how well the contexts cover different aspects of the query"""
-        from langchain.prompts import ChatPromptTemplate
-        
         model = self._metric_to_model["context_coverage"]
         context_text = "\n\n".join([f"Context {i+1}: {context}" for i, context in enumerate(contexts)])
-        
         template = """
         First, identify the key aspects or sub-questions contained in the main question.
         Then evaluate how completely the provided contexts cover these aspects on a scale of 1 to 5.
@@ -1027,27 +768,21 @@ class DeepEvaluator(BaseEvaluator):
         
         Your response should be just the score (a number between 1 and 5).
         """
-        
         prompt_template = ChatPromptTemplate.from_template(template)
         chain = prompt_template | model
-        response = chain.invoke({
-            "query": query,
-            "contexts": context_text
-        })
-        
-        # Use the improved score extraction method
-        return self._extract_score_from_response(response.content)
-    
+        response_obj = chain.invoke({"query": query, "contexts": context_text})
+        return self._extract_score_from_response(response_obj.content)
+
     @property
     def supported_metrics(self) -> List[str]:
         """Return list of metrics supported by this evaluator"""
         return list(self._metric_to_model.keys())
-    
+
     @property
     def name(self) -> str:
         """Return the name of the evaluator"""
         return "Deep Evaluator"
-    
+
     @property
     def description(self) -> str:
         """Return a description of the evaluator"""
@@ -1248,113 +983,97 @@ class CustomEvaluator(BaseEvaluator):
         """Initialize the custom evaluator"""
         super().__init__(metrics)
         try:
-            if not os.environ.get("ANTHROPIC_API_KEY"):
-                raise ValueError("ANTHROPIC_API_KEY environment variable not set. This is required for CustomEvaluator with Claude.")
-
-            from langchain_anthropic import ChatAnthropic
-            self._evaluator_model = ChatAnthropic(
-                model="claude-3-opus-20240229" 
-                # temperature=0.0 # For more deterministic outputs if needed
-            )
+            # The ClaudeLLM class checks for the API key internally
+            from models.llm_models import ClaudeLLM
+            self._evaluator_model = ClaudeLLM(model_name="claude-3-opus-20240229")
+            self._prompt_provider = get_provider('evaluator')
         except ImportError:
-            raise ValueError("langchain_anthropic is not installed. Please install it to use Claude for custom evaluation.")
+            raise ValueError("models.llm_models.ClaudeLLM could not be imported.")
         except Exception as e:
-            print(f"Error initializing Claude model: {e}. Evaluation will not work.")
+            print(f"Error initializing Claude model for evaluator: {e}. Evaluation will not work.")
             self._evaluator_model = None
 
         if self._evaluator_model is None:
-            raise ValueError("Claude model (claude-3-opus-20240229) could not be initialized. Please check ANTHROPIC_API_KEY and langchain_anthropic installation.")
+            raise ValueError("Claude model (claude-3-opus-20240229) could not be initialized. Please check ANTHROPIC_API_KEY.")
 
     def _parse_llm_response_to_list(self, response_content: str, item_type: str = "statement") -> List[str]:
         """Parses LLM response (expected to be a list of items) into a Python list of strings."""
-        # Assuming LLM might return a numbered list, bullet points, or simple newline-separated items.
-        items = []
-        # Try to parse as JSON list first
         try:
-            parsed_json = json.loads(response_content)
-            if isinstance(parsed_json, list):
-                return [str(item) for item in parsed_json]
+            # Use regex to find the JSON list within the response text
+            match = re.search(r'\[(.*?)\]', response_content, re.DOTALL)
+            if match:
+                json_str = match.group(0)
+                parsed_list = json.loads(json_str)
+                if isinstance(parsed_list, list) and all(isinstance(item, str) for item in parsed_list):
+                    return parsed_list
         except json.JSONDecodeError:
-            pass # Not a JSON list, try other parsing
-
-        lines = response_content.strip().split('\n')
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            # Remove common list markers (numbers, bullets)
-            line = re.sub(r"^\d+[\.\)]\s*", "", line)  # Matches "1. ", "1) "
-            line = re.sub(r"^[\*\-\+]\s*", "", line)  # Matches "* ", "- ", "+ "
-            if line:
-                items.append(line.strip())
+            # Fallback for non-JSON-compliant but simple list-like strings
+            pass
         
-        if not items and response_content.strip(): # If parsing failed but there was content
-             # Fallback: consider the whole response as a single item if it's not clearly a list
-            if len(response_content.strip().split()) > 5: # Heuristic: if it's a sentence/paragraph
-                 items.append(response_content.strip())
-            else: # Otherwise, might be a malformed list, try splitting by common delimiters
-                items = [i.strip() for i in re.split(r'[,;]', response_content) if i.strip()]
+        # Fallback for simple newline-separated lists
+        if '\n' in response_content:
+            return [line.strip() for line in response_content.split('\n') if line.strip()]
 
-        if not items and response_content.strip():
-            print(f"Warning: Could not parse LLM response into a list of {item_type}s. Response: {response_content}")
-            return [response_content.strip()] # Return the whole response as a single item as a last resort
-        return items
+        print(f"Could not parse LLM response into a list of {item_type}s. Response: {response_content}")
+        return []
 
     def _parse_llm_yes_no_response(self, response_content: str, prompt_details: str) -> bool:
         """Parses LLM response to a boolean for Yes/No questions."""
-        response_lower = response_content.strip().lower()
-        if "yes" in response_lower and "no" not in response_lower: # Check for "yes" and not "yes, but no..."
+        normalized_response = response_content.strip().upper()
+        if 'YES' in normalized_response:
             return True
-        elif "no" in response_lower and "yes" not in response_lower:
+        if 'NO' in normalized_response:
             return False
-        else:
-            # Fallback: if the answer is not clearly yes/no, we might need to be conservative
-            # or re-prompt. For now, let's assume 'no' if unclear to be safe.
-            print(f"Warning: Ambiguous Yes/No response for prompt '{prompt_details}'. Response: {response_content}. Defaulting to False.")
-            return False
+        
+        print(f"Could not parse 'Yes' or 'No' from LLM response for {prompt_details}. Response: {response_content}")
+        return False # Default to 'No' on ambiguity
 
     def _parse_llm_float_response(self, response_content: str, prompt_details: str) -> float:
         """Parses LLM response to a float, expected to be between 0 and 1."""
         try:
-            # Extract numbers using regex to handle cases like "Score: 0.8" or just "0.8"
-            match = re.search(r"[-+]?\d*\.?\d+", response_content)
+            # Find a floating-point number in the response
+            match = re.search(r'\d*\.\d+', response_content)
             if match:
-                score = float(match.group())
-                return min(max(score, 0.0), 1.0) # Clamp to 0-1 range
-            else:
-                print(f"Warning: Could not parse float from response for prompt '{prompt_details}'. Response: {response_content}. Defaulting to 0.0.")
+                return float(match.group())
+            # Fallback for integer '0' or '1'
+            if '1' in response_content:
+                return 1.0
+            if '0' in response_content:
                 return 0.0
         except ValueError:
-            print(f"Warning: ValueError parsing float for prompt '{prompt_details}'. Response: {response_content}. Defaulting to 0.0.")
-            return 0.0
+            pass
+        
+        print(f"Could not parse float from LLM response for {prompt_details}. Response: {response_content}")
+        return 0.0 # Default to 0.0 on ambiguity
 
     def evaluate(self, query: str, response: str, contexts: List[str],
                  ground_truth: Optional[str] = None, cost: Optional[float] = None) -> Dict[str, float]:
         """Evaluate RAG system performance using selected metrics"""
         results = {}
-
         for metric in self._metrics:
-            if metric == EvaluationMetricType.CONTEXT_RECALL.value:
-                if ground_truth is None:
-                    raise ValueError("Ground truth is required for Context Recall.")
-                results[metric] = self._evaluate_context_recall(query, ground_truth, contexts)
-            elif metric == EvaluationMetricType.CONTEXT_PRECISION.value:
-                if ground_truth is None:
-                    raise ValueError("Ground truth is required for Context Precision.")
-                results[metric] = self._evaluate_context_precision(query, ground_truth, contexts)
-            elif metric == EvaluationMetricType.ANSWER_RELEVANCE.value:
-                results[metric] = self._evaluate_answer_relevancy(query, response, contexts)
-            elif metric == EvaluationMetricType.FAITHFULNESS.value:
-                results[metric] = self._evaluate_faithfulness(response, contexts)
-            elif metric == EvaluationMetricType.ANSWER_CORRECTNESS.value:
-                if ground_truth is None:
-                    raise ValueError("Ground truth is required for Answer Correctness.")
-                results[metric] = self._evaluate_answer_correctness(response, ground_truth)
-            # No F1 score or overall score as per requirements
+            metric_value = 0.0
+            # Ensure ground truth is available for metrics that require it
+            if metric in ["context_recall", "context_precision", "answer_correctness"] and not ground_truth:
+                print(f"Skipping metric '{metric}' as it requires a ground truth answer.")
+                continue
 
+            if metric == "context_recall":
+                metric_value = self._evaluate_context_recall(query, ground_truth, contexts)
+            elif metric == "context_precision":
+                metric_value = self._evaluate_context_precision(query, ground_truth, contexts)
+            elif metric == "answer_relevancy":
+                metric_value = self._evaluate_answer_relevancy(query, response, contexts)
+            elif metric == "faithfulness":
+                metric_value = self._evaluate_faithfulness(response, contexts)
+            elif metric == "answer_correctness":
+                metric_value = self._evaluate_answer_correctness(response, ground_truth)
+            
+            # Scale from 0-1 range to 1-5 range for consistent reporting
+            results[metric] = 1.0 + metric_value * 4.0
+        
         if cost is not None:
             results[EvaluationMetricType.COST.value] = cost
-
+            
         return results
 
     def _evaluate_context_recall(self, query: str, ground_truth: str, contexts: List[str]) -> float:
@@ -1362,373 +1081,175 @@ class CustomEvaluator(BaseEvaluator):
         Measures the extent to which the retrieved context aligns with the annotated answer (ground truth).
         Computed using question, ground truth, and retrieved context. Values range from 0 to 1.
         """
-        if not self._evaluator_model:
-            print("Warning: Evaluator model not available for context_recall. Returning 0.0.")
+        # Step 1: Extract statements from the ground truth
+        prompt_statements = self._prompt_provider.get_prompt(
+            'context_recall_statements',
+            ground_truth=ground_truth
+        )
+        response_statements_text, _ = self._evaluator_model.generate(prompt=prompt_statements, evaluation_mode=True)
+        statements = self._parse_llm_response_to_list(response_statements_text, "statement")
+        if not statements:
             return 0.0
 
-        # Step 1: Break the ground truth answer into individual statements.
-        prompt_template_statements = ChatPromptTemplate.from_template(
-            """Break the following ground truth answer into individual statements or claims.
-            Each statement should be a distinct piece of factual information.
-            Return a JSON list of strings. For example: ["Statement 1.", "Statement 2.", "Statement 3."]
+        # Step 2: For each statement, check if it's supported by the contexts
+        supported_statements = 0
+        for statement in statements:
+            prompt_check = self._prompt_provider.get_prompt(
+                'context_recall_attribution',
+                statement=statement,
+                context="\n\n".join(contexts)
+            )
+            response_check_text, _ = self._evaluator_model.generate(prompt=prompt_check, evaluation_mode=True)
+            if self._parse_llm_yes_no_response(response_check_text, f"recall check for statement: '{statement}'"):
+                supported_statements += 1
 
-            Ground Truth Answer:
-            {ground_truth}
-
-            Statements:"""
-                    )
-        chain_statements = prompt_template_statements | self._evaluator_model
-        try:
-            response_statements = chain_statements.invoke({"ground_truth": ground_truth})
-            ground_truth_statements = self._parse_llm_response_to_list(response_statements.content, "ground truth statement")
-        except Exception as e:
-            print(f"Error getting statements from LLM for context_recall: {e}. Returning 0.0")
-            ground_truth_statements = []
-
-        if not ground_truth_statements:
-            return 0.0
-
-        # Step 2: For each ground truth statement, verify if it can be attributed to the retrieved context.
-        attributed_statements = 0
-        contexts_str = "\\n\\n".join([f"Context {i+1}: {ctx}" for i, ctx in enumerate(contexts)])
-        
-        prompt_template_attribution = ChatPromptTemplate.from_template(
-            """Given the following retrieved contexts and a single statement from the ground truth,
-            determine if the statement can be directly attributed to (supported by) the information present in the retrieved contexts.
-            Answer with only "Yes" or "No".
-
-            Retrieved Contexts:
-            {contexts}
-
-            Statement:
-            {statement}
-
-            Can the statement be attributed to the retrieved contexts? (Yes/No):"""
-                    )
-        chain_attribution = prompt_template_attribution | self._evaluator_model
-
-        for stmt in ground_truth_statements:
-            if not stmt.strip(): # Skip empty statements
-                continue
-            try:
-                response_attribution = chain_attribution.invoke({"contexts": contexts_str, "statement": stmt})
-                if self._parse_llm_yes_no_response(response_attribution.content, f"context_recall attribution for statement: {stmt}"):
-                    attributed_statements += 1
-            except Exception as e:
-                print(f"Error during attribution check for context_recall statement '{stmt}': {e}")
-                # Optionally, decide how to handle errors, e.g., assume not attributed
-
-        # Step 3: Calculate context recall.
-        recall_0_to_1 = attributed_statements / len(ground_truth_statements) if ground_truth_statements else 0.0
-        scaled_recall = 1.0 + (min(max(recall_0_to_1, 0.0), 1.0) * 4.0) # Scale to 1-5
-        return scaled_recall
+        # Step 3: Calculate recall score
+        recall_score = supported_statements / len(statements) if statements else 0.0
+        return recall_score
 
     def _evaluate_context_precision(self, query: str, ground_truth: str, contexts: List[str]) -> float:
         """
         Evaluates whether all ground-truth relevant items in contexts are ranked higher.
         Computed using question, ground_truth, and contexts. Values range from 0 to 1.
         """
-        if not self._evaluator_model:
-            print("Warning: Evaluator model not available for context_precision. Returning 0.0.")
-            return 0.0
-        
-        if not contexts:
-            return 0.0
+        # Step 1: Extract statements from the ground truth
+        prompt_statements = self._prompt_provider.get_prompt(
+            'context_precision_statements',
+            ground_truth=ground_truth
+        )
+        response_statements_text, _ = self._evaluator_model.generate(prompt=prompt_statements, evaluation_mode=True)
+        statements = self._parse_llm_response_to_list(response_statements_text, "statement")
+        if not statements:
+            return 1.0 # No statements to check, so precision is vacuously high
 
-        precision_at_k_scores = []
-        relevant_chunks_found = 0
+        # Step 2: For each context, check if it is relevant
+        relevant_contexts = 0
+        for context in contexts:
+            prompt_check = self._prompt_provider.get_prompt(
+                'context_precision_relevance',
+                query=query,
+                context=context
+            )
+            response_check_text, _ = self._evaluator_model.generate(prompt=prompt_check, evaluation_mode=True)
+            if self._parse_llm_yes_no_response(response_check_text, f"precision check for context: '{context[:100]}...'"):
+                relevant_contexts += 1
 
-        prompt_template_relevance = ChatPromptTemplate.from_template(
-            """Consider the following question and ground truth answer.
-            Then, evaluate if the provided context chunk contains information that is relevant and helpful to construct the ground truth answer for the question.
-            Answer with only "Yes" or "No".
-
-            Question:
-            {question}
-
-            Ground Truth Answer:
-            {ground_truth}
-
-            Context Chunk:
-            {context_chunk}
-
-            Is this context chunk relevant and helpful for the ground truth answer? (Yes/No):"""
-                    )
-        chain_relevance = prompt_template_relevance | self._evaluator_model
-
-        for i, context_chunk in enumerate(contexts):
-            k = i + 1
-            is_relevant = False
-            if not context_chunk.strip(): # Skip empty context chunks
-                precision_at_k = relevant_chunks_found / k # if chunk is empty, it means previous relevant count over k
-                precision_at_k_scores.append(precision_at_k)
-                continue
-            try:
-                response_relevance = chain_relevance.invoke({
-                    "question": query,
-                    "ground_truth": ground_truth,
-                    "context_chunk": context_chunk
-                })
-                if self._parse_llm_yes_no_response(response_relevance.content, f"context_precision relevance for chunk {k}"):
-                    is_relevant = True
-            except Exception as e:
-                print(f"Error during relevance check for context_precision chunk {k}: {e}")
-                # Optionally, decide how to handle errors, e.g., assume not relevant
-
-            if is_relevant:
-                relevant_chunks_found += 1
-            
-            precision_at_k = relevant_chunks_found / k
-            precision_at_k_scores.append(precision_at_k)
-
-        if not precision_at_k_scores:
-            # If there were no context chunks to evaluate (e.g. contexts list was empty or all chunks were empty strings)
-            # or if all LLM calls failed for relevance, we should return a base score. Let's use 1.0 for a 1-5 scale.
-            return 1.0 
-        
-        mean_precision_0_to_1 = sum(precision_at_k_scores) / len(precision_at_k_scores)
-        scaled_precision = 1.0 + (min(max(mean_precision_0_to_1, 0.0), 1.0) * 4.0) # Scale to 1-5
-        return scaled_precision
+        # Step 3: Calculate precision score
+        precision_score = relevant_contexts / len(contexts) if contexts else 0.0
+        return precision_score
 
     def _evaluate_answer_relevancy(self, query: str, answer: str, contexts: List[str]) -> float:
         """
         Assesses how pertinent the generated answer is to the given prompt.
         Computed using the question, the context and the answer. Values range from 0 to 1.
         """
-        if not self._evaluator_model:
-            print("Warning: Evaluator model not available for answer_relevancy. Returning 0.0.")
-            return 0.0
-
-        # Step 1: Reverse-engineer 'n' variants of the question from the generated answer using an LLM.
-        contexts_str = "\\n\\n".join([f"Context {i+1}: {ctx}" for i, ctx in enumerate(contexts)])
-        prompt_template_qgen = ChatPromptTemplate.from_template(
-            """Given the following answer and supporting contexts, please generate 3 distinct questions that this answer could be a response to.
-            Focus on rephrasing the core intent and information sought, based *only* on the provided answer and contexts.
-            Return a JSON list of strings. For example: ["Generated Question 1?", "Generated Question 2?", "Generated Question 3?"]
-
-            Answer:
-            {answer}
-
-            Contexts:
-            {contexts}
-
-            Generated Questions:"""
+        prompt = self._prompt_provider.get_prompt(
+            'answer_relevancy',
+            question=query,
+            answer=answer,
+            context="\n\n".join(contexts)
         )
-        chain_qgen = prompt_template_qgen | self._evaluator_model
-        generated_questions = []
-        try:
-            response_qgen = chain_qgen.invoke({"answer": answer, "contexts": contexts_str})
-            generated_questions = self._parse_llm_response_to_list(response_qgen.content, "generated question")
-        except Exception as e:
-            print(f"Error generating questions for answer_relevancy: {e}")
-        
-        if not generated_questions:
-            print("Warning: No questions generated by LLM for answer_relevancy. Returning 0.0.")
-            return 0.0
-
-        # Step 2: Calculate the mean similarity between the generated questions and the actual question.
-        total_similarity = 0
-        actual_eval_count = 0
-
-        prompt_template_similarity = ChatPromptTemplate.from_template(
-            """Rate the semantic similarity between the following two questions on a scale from 0.0 (not similar at all) to 1.0 (semantically identical).
-            Provide only the numerical score.
-
-            Original Question:
-            {original_question}
-
-            Generated Question:
-            {generated_question}
-
-            Similarity Score (0.0-1.0):"""
-        )
-        chain_similarity = prompt_template_similarity | self._evaluator_model
-
-        for gen_q in generated_questions:
-            if not gen_q.strip(): # Skip empty generated questions
-                continue
-            try:
-                response_similarity = chain_similarity.invoke({"original_question": query, "generated_question": gen_q})
-                similarity_score = self._parse_llm_float_response(response_similarity.content, f"answer_relevancy similarity for gen_q: {gen_q}")
-                total_similarity += similarity_score
-                actual_eval_count += 1
-            except Exception as e:
-                print(f"Error calculating similarity for answer_relevancy gen_q '{gen_q}': {e}")
-        
-        if actual_eval_count == 0:
-            print("Warning: Could not calculate similarity for any generated questions in answer_relevancy. Returning 1.0.")
-            return 1.0 # Bottom of 1-5 scale
-            
-        mean_similarity_0_to_1 = total_similarity / actual_eval_count
-        scaled_similarity = 1.0 + (min(max(mean_similarity_0_to_1, 0.0), 1.0) * 4.0) # Scale to 1-5
-        return scaled_similarity
+        response_text, _ = self._evaluator_model.generate(prompt=prompt, evaluation_mode=True)
+        return self._parse_llm_float_response(response_text, "answer relevancy")
 
     def _evaluate_faithfulness(self, answer: str, contexts: List[str]) -> float:
         """
         Measures the factual consistency of the generated answer against the given context.
         Calculated from answer and retrieved context. Scaled to (0,1) range.
         """
-        if not self._evaluator_model:
-            print("Warning: Evaluator model not available for faithfulness. Returning 0.0.")
-            return 0.0
-
-        # Step 1: Break the generated answer into individual statements.
-        prompt_template_statements = ChatPromptTemplate.from_template(
-            """Break the following generated answer into individual factual statements or claims.
-            Each statement should be a distinct piece of factual information asserted in the answer.
-            Return a JSON list of strings. For example: ["Claim 1.", "Claim 2.", "Claim 3."]
-
-            Generated Answer:
-            {answer}
-
-            Statements:"""
+        # Step 1: Extract statements from the answer
+        prompt_statements = self._prompt_provider.get_prompt(
+            'faithfulness_statements',
+            answer=answer
         )
-        chain_statements = prompt_template_statements | self._evaluator_model
-        answer_statements = []
-        try:
-            response_statements = chain_statements.invoke({"answer": answer})
-            answer_statements = self._parse_llm_response_to_list(response_statements.content, "answer statement")
-        except Exception as e:
-            print(f"Error getting statements from LLM for faithfulness: {e}")
+        response_statements_text, _ = self._evaluator_model.generate(prompt=prompt_statements, evaluation_mode=True)
+        statements = self._parse_llm_response_to_list(response_statements_text, "statement")
+        if not statements:
+            return 1.0 # No statements to check, so faithfulness is vacuously high
 
-        if not answer_statements:
-            print("Warning: No statements parsed from answer for faithfulness. Returning 0.0.")
-            return 0.0
-
-        # Step 2: For each generated statement, verify if it can be inferred from the given context.
+        # Step 2: For each statement, check if it's supported by the contexts
         faithful_statements = 0
-        contexts_str = "\\n\\n".join([f"Context {i+1}: {ctx}" for i, ctx in enumerate(contexts)])
-        
-        prompt_template_inference = ChatPromptTemplate.from_template(
-            """Given the following retrieved contexts and a single statement from a generated answer,
-            determine if the statement can be directly inferred from (is factually consistent with) the information present in the retrieved contexts.
-            Answer with only "Yes" or "No".
+        for statement in statements:
+            prompt_check = self._prompt_provider.get_prompt(
+                'faithfulness_verification',
+                statement=statement,
+                context="\n\n".join(contexts)
+            )
+            response_check_text, _ = self._evaluator_model.generate(prompt=prompt_check, evaluation_mode=True)
+            if self._parse_llm_yes_no_response(response_check_text, f"faithfulness check for statement: '{statement}'"):
+                faithful_statements += 1
 
-            Retrieved Contexts:
-            {contexts}
-
-            Statement from Answer:
-            {statement}
-
-            Can the statement be inferred from the retrieved contexts? (Yes/No):"""
-        )
-        chain_inference = prompt_template_inference | self._evaluator_model
-
-        for stmt in answer_statements:
-            if not stmt.strip(): # Skip empty statements
-                continue
-            try:
-                response_inference = chain_inference.invoke({"contexts": contexts_str, "statement": stmt})
-                if self._parse_llm_yes_no_response(response_inference.content, f"faithfulness inference for statement: {stmt}"):
-                    faithful_statements += 1
-            except Exception as e:
-                print(f"Error during inference check for faithfulness statement '{stmt}': {e}")
-
-        # Step 3: Calculate faithfulness.
-        faithfulness_score_0_to_1 = faithful_statements / len(answer_statements) if answer_statements else 0.0
-        scaled_faithfulness = 1.0 + (min(max(faithfulness_score_0_to_1, 0.0), 1.0) * 4.0) # Scale to 1-5
-        return scaled_faithfulness
+        # Step 3: Calculate faithfulness score
+        faithfulness_score = faithful_statements / len(statements) if statements else 0.0
+        return faithfulness_score
 
     def _evaluate_answer_correctness(self, answer: str, ground_truth: str) -> float:
         """
         Gauges the accuracy of the generated answer when compared to the ground truth.
         Relies on ground truth and answer. Scores range from 0 to 1.
         """
-        if not self._evaluator_model:
-            print("Warning: Evaluator model not available for answer_correctness. Returning 0.0.")
-            return 0.0
+        # This is a multi-step process:
+        # 1. Factual comparison (precision, recall, F1 over statements)
+        # 2. Semantic similarity comparison
+        # 3. Weighted average of the two scores
 
-        # Factual correctness
-        tp_statements = []
-        fp_statements = []
-        fn_statements = []
-
-        prompt_template_factual = ChatPromptTemplate.from_template(
-            """Compare the generated answer with the ground truth answer. Identify:
-            1. True Positives (TP): Factual statements present in *both* the ground truth and the generated answer.
-            2. False Positives (FP): Factual statements present in the *generated answer* but *not* in the ground truth.
-            3. False Negatives (FN): Factual statements present in the *ground truth* but *not* in the generated answer.
-
-            Break down each answer into its core factual statements before comparison.
-            Return the results as a JSON object with three keys: "TP", "FP", "FN", where each key maps to a list of strings (the statements).
-            Example: {{"TP": ["Statement A is true."], "FP": ["Statement B is false."], "FN": ["Statement C was missed."]}}
-
-            Ground Truth Answer:
-            {ground_truth}
-
-            Generated Answer:
-            {answer}
-
-            Factual Analysis (TP, FP, FN JSON):"""
+        # Step 1.1: Extract factual statements from both answer and ground truth
+        prompt_factual = self._prompt_provider.get_prompt(
+            'answer_correctness_factual',
+            ground_truth=ground_truth,
+            answer=answer
         )
-        chain_factual = prompt_template_factual | self._evaluator_model
-        try:
-            response_factual = chain_factual.invoke({"ground_truth": ground_truth, "answer": answer})
-            factual_analysis_json = json.loads(response_factual.content.strip()) # Expecting JSON directly
-            tp_statements = [str(s) for s in factual_analysis_json.get("TP", [])]
-            fp_statements = [str(s) for s in factual_analysis_json.get("FP", [])]
-            fn_statements = [str(s) for s in factual_analysis_json.get("FN", [])]
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON for factual analysis in answer_correctness: {e}. Response: {response_factual.content if 'response_factual' in locals() else 'N/A'}")
-        except Exception as e:
-            print(f"Error during factual analysis for answer_correctness: {e}")
+        response_factual_text, _ = self._evaluator_model.generate(prompt=prompt_factual, evaluation_mode=True)
         
-        tp_count = len(tp_statements)
-        fp_count = len(fp_statements)
-        fn_count = len(fn_statements)
+        tp_count = 0
+        fp_count = 0
+        fn_count = 0
+        try:
+            # The prompt asks for a JSON object with TP, FP, FN counts.
+            analysis = json.loads(response_factual_text)
+            tp_count = int(analysis.get("TP", 0))
+            fp_count = int(analysis.get("FP", 0))
+            fn_count = int(analysis.get("FN", 0))
+        except (json.JSONDecodeError, ValueError):
+             print(f"Warning: Could not parse factual analysis from LLM for answer correctness. Response: {response_factual_text}")
 
         precision = tp_count / (tp_count + fp_count) if (tp_count + fp_count) > 0 else 0
         recall = tp_count / (tp_count + fn_count) if (tp_count + fn_count) > 0 else 0
         factual_f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 
-        # Semantic similarity
-        semantic_similarity = 0.0
-        prompt_template_semantic = ChatPromptTemplate.from_template(
-            """Rate the overall semantic similarity between the generated answer and the ground truth answer.
-            Consider if they convey the same meaning, even if the wording is different.
-            Score on a scale from 0.0 (completely different meaning) to 1.0 (identical meaning).
-            Provide only the numerical score.
-
-            Ground Truth Answer:
-            {ground_truth}
-
-            Generated Answer:
-            {answer}
-
-            Semantic Similarity Score (0.0-1.0):"""
+        # Step 2: Semantic similarity comparison
+        prompt_semantic = self._prompt_provider.get_prompt(
+            'answer_correctness_semantic',
+            ground_truth=ground_truth,
+            answer=answer
         )
-        chain_semantic = prompt_template_semantic | self._evaluator_model
-        try:
-            response_semantic = chain_semantic.invoke({"ground_truth": ground_truth, "answer": answer})
-            semantic_similarity = self._parse_llm_float_response(response_semantic.content, "answer_correctness semantic similarity")
-        except Exception as e:
-            print(f"Error calculating semantic similarity for answer_correctness: {e}")
-
-        # Weighted average (default weights: 0.5 for factual, 0.5 for semantic)
-        factual_weight = 0.5
-        semantic_weight = 0.5
+        response_semantic_text, _ = self._evaluator_model.generate(prompt=prompt_semantic, evaluation_mode=True)
+        semantic_similarity = self._parse_llm_float_response(response_semantic_text, "answer correctness semantic similarity")
         
-        answer_correctness_score_0_to_1 = (factual_weight * factual_f1_score) + (semantic_weight * semantic_similarity)
-        scaled_correctness = 1.0 + (min(max(answer_correctness_score_0_to_1, 0.0), 1.0) * 4.0) # Scale to 1-5
-        return scaled_correctness
+        # Step 3: Weighted average (giving more weight to factual correctness)
+        factual_weight = 0.6
+        semantic_weight = 0.4
+        final_score = (factual_weight * factual_f1_score) + (semantic_weight * semantic_similarity)
+        
+        return final_score
 
     @property
     def supported_metrics(self) -> List[str]:
         return [
             EvaluationMetricType.CONTEXT_RECALL.value,
             EvaluationMetricType.CONTEXT_PRECISION.value,
-            EvaluationMetricType.ANSWER_RELEVANCE.value,
+            EvaluationMetricType.ANSWER_RELEVANCY.value,
             EvaluationMetricType.FAITHFULNESS.value,
             EvaluationMetricType.ANSWER_CORRECTNESS.value
         ]
 
     @property
     def name(self) -> str:
-        return "Custom Claude Evaluator"
+        return "Custom LLM Evaluator (Claude 3 Opus)"
 
     @property
     def description(self) -> str:
-        return "Evaluator using a Claude model for Context Recall, Answer Relevancy, Context Precision, Faithfulness, and Answer Correctness."
+        return "Uses Claude 3 Opus to perform a series of checks for detailed, multi-step evaluation."
 
 class EvaluatorFactory:
     """Factory for creating evaluators"""

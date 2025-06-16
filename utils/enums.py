@@ -1,7 +1,6 @@
 from enum import Enum, auto
 from typing import Dict, Any, List, Optional, Type
 
-# Enum for Embedding Models
 class EmbeddingModelType(Enum):
     OPENAI = "OpenAI"
     COHERE = "Cohere"
@@ -22,7 +21,6 @@ class EmbeddingModelType(Enum):
                 return e
         raise ValueError(f"Unknown embedding model: {value}")
 
-# Enum for Reranker Models
 class RerankerModelType(Enum):
     NONE = "None"
     COHERE_V2 = "Cohere-V2"
@@ -45,7 +43,6 @@ class RerankerModelType(Enum):
                 return e
         raise ValueError(f"Unknown reranker model: {value}")
 
-# Enum for LLM Models
 class LLMModelType(Enum):
     OPENAI_GPT35 = "OpenAI GPT-3.5"
     OPENAI_GPT4 = "OpenAI GPT-4"
@@ -67,12 +64,11 @@ class LLMModelType(Enum):
                 return e
         raise ValueError(f"Unknown LLM model: {value}")
 
-# Enum for Vector Stores
 class VectorStoreType(Enum):
     FAISS = "FAISS"
     CHROMA = "Chroma"
     MILVUS = "Milvus"
-    HYBRID = "Hybrid"  # New hybrid option
+    HYBRID = "Hybrid"
     
     @classmethod
     def list(cls) -> List[str]:
@@ -85,7 +81,6 @@ class VectorStoreType(Enum):
                 return e
         raise ValueError(f"Unknown vector store: {value}")
 
-# Enum for Chunking Strategies
 class ChunkingStrategyType(Enum):
     PARAGRAPH = "Paragraph-based"
     SLIDING_WINDOW = "Sliding Window"
@@ -103,7 +98,6 @@ class ChunkingStrategyType(Enum):
                 return e
         raise ValueError(f"Unknown chunking strategy: {value}")
 
-# Enum for Evaluation Methods
 class EvaluationMethodType(Enum):
     BUILTIN = "Built-in Evaluator"
     LANGSMITH = "LangSmith Evaluator"
@@ -141,7 +135,6 @@ class EvaluationBackendType(Enum):
                 return e
         raise ValueError(f"No enum value matches: {value}")
 
-# Enum for Evaluation Metrics
 class EvaluationMetricType(Enum):
     """Enum for evaluation metric types"""
     ANSWER_RELEVANCE = "answer_relevance"

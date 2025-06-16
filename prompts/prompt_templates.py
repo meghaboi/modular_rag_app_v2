@@ -331,6 +331,188 @@ Return a JSON array of objects, each containing:
 
 Please analyze each document carefully and provide your reranking as a valid JSON array."""
 
+# Evaluation Templates
+EVAL_ANSWER_RELEVANCE_TEMPLATE = """
+Evaluate the relevance of the answer to the question on a scale of 1 to 5.
+
+Question: {query}
+Answer: {response}
+{ground_truth_section}
+Scoring guidelines:
+1: The answer is completely irrelevant to the question.
+2: The answer is slightly relevant but misses the main point.
+3: The answer is moderately relevant but incomplete.
+4: The answer is relevant and mostly complete.
+5: The answer is highly relevant and complete.
+
+Your response should be just the score (a number between 1 and 5).
+"""
+
+EVAL_CONTEXT_RELEVANCE_TEMPLATE = """
+Evaluate the relevance of the provided contexts to the question on a scale of 1 to 5.
+
+Question: {query}
+
+Contexts:
+{contexts}
+
+Scoring guidelines:
+1: The contexts are completely irrelevant to the question.
+2: The contexts are slightly relevant but miss important information.
+3: The contexts are moderately relevant but incomplete.
+4: The contexts are relevant and contain most of the necessary information.
+5: The contexts are highly relevant and contain all necessary information.
+
+Your response should be just the score (a number between 1 and 5).
+"""
+
+EVAL_GROUNDEDNESS_TEMPLATE = """
+Evaluate the groundedness of the answer in the provided contexts on a scale of 1 to 5.
+
+Answer: {response}
+
+Contexts:
+{contexts}
+
+Scoring guidelines:
+1: The answer contains information not present in the contexts (hallucination).
+2: The answer has significant content not grounded in the contexts.
+3: The answer is partially grounded in the contexts but includes some ungrounded statements.
+4: The answer is mostly grounded in the contexts with minor extrapolations.
+5: The answer is completely grounded in the contexts with no hallucinations.
+
+Your response should be just the score (a number between 1 and 5).
+"""
+
+EVAL_FAITHFULNESS_TEMPLATE = """
+Evaluate the faithfulness of the answer to the provided contexts on a scale of 1 to 5.
+
+Answer: {response}
+
+Contexts:
+{contexts}
+
+Scoring guidelines:
+1: The answer contradicts or misrepresents the information in the contexts.
+2: The answer includes significant misinterpretations of the contexts.
+3: The answer is partially faithful but includes some misinterpretations.
+4: The answer is mostly faithful with minor inaccuracies.
+5: The answer is completely faithful to the information in the contexts.
+
+Your response should be just the score (a number between 1 and 5).
+"""
+
+# Custom Evaluator Templates
+CUSTOM_EVAL_CONTEXT_RECALL_STATEMENTS_TEMPLATE = """Break the following ground truth answer into individual statements or claims.
+Each statement should be a distinct piece of factual information.
+Return a JSON list of strings. For example: ["Statement 1.", "Statement 2.", "Statement 3."]
+
+Ground Truth Answer:
+{ground_truth}
+
+Statements:"""
+
+CUSTOM_EVAL_CONTEXT_RECALL_ATTRIBUTION_TEMPLATE = """Given the following retrieved contexts and a single statement from the ground truth,
+determine if the statement can be directly attributed to (supported by) the information present in the retrieved contexts.
+Answer with only "Yes" or "No".
+
+Retrieved Contexts:
+{contexts}
+
+Statement:
+{statement}
+
+Can the statement be attributed to the retrieved contexts? (Yes/No):"""
+
+CUSTOM_EVAL_CONTEXT_PRECISION_RELEVANCE_TEMPLATE = """Consider the following question and ground truth answer.
+Then, evaluate if the provided context chunk contains information that is relevant and helpful to construct the ground truth answer for the question.
+Answer with only "Yes" or "No".
+
+Question:
+{question}
+
+Ground Truth Answer:
+{ground_truth}
+
+Context Chunk:
+{context_chunk}
+
+Is this context chunk relevant and helpful for the ground truth answer? (Yes/No):"""
+
+CUSTOM_EVAL_ANSWER_RELEVANCY_QGEN_TEMPLATE = """Given the following answer and supporting contexts, please generate 3 distinct questions that this answer could be a response to.
+Focus on rephrasing the core intent and information sought, based *only* on the provided answer and contexts.
+Return a JSON list of strings. For example: ["Generated Question 1?", "Generated Question 2?", "Generated Question 3?"]
+
+Answer:
+{answer}
+
+Contexts:
+{contexts}
+
+Generated Questions:"""
+
+CUSTOM_EVAL_ANSWER_RELEVANCY_SIMILARITY_TEMPLATE = """Rate the semantic similarity between the following two questions on a scale from 0.0 (not similar at all) to 1.0 (semantically identical).
+Provide only the numerical score.
+
+Original Question:
+{original_question}
+
+Generated Question:
+{generated_question}
+
+Similarity Score (0.0-1.0):"""
+
+CUSTOM_EVAL_FAITHFULNESS_STATEMENTS_TEMPLATE = """Break the following generated answer into individual factual statements or claims.
+Each statement should be a distinct piece of factual information asserted in the answer.
+Return a JSON list of strings. For example: ["Claim 1.", "Claim 2.", "Claim 3."]
+
+Generated Answer:
+{answer}
+
+Statements:"""
+
+CUSTOM_EVAL_FAITHFULNESS_INFERENCE_TEMPLATE = """Given the following retrieved contexts and a single statement from a generated answer,
+determine if the statement can be directly inferred from (is factually consistent with) the information present in the retrieved contexts.
+Answer with only "Yes" or "No".
+
+Retrieved Contexts:
+{contexts}
+
+Statement from Answer:
+{statement}
+
+Can the statement be inferred from the retrieved contexts? (Yes/No):"""
+
+CUSTOM_EVAL_ANSWER_CORRECTNESS_FACTUAL_TEMPLATE = """Compare the generated answer with the ground truth answer. Identify:
+1. True Positives (TP): Factual statements present in *both* the ground truth and the generated answer.
+2. False Positives (FP): Factual statements present in the *generated answer* but *not* in the ground truth.
+3. False Negatives (FN): Factual statements present in the *ground truth* but *not* in the generated answer.
+
+Break down each answer into its core factual statements before comparison.
+Return the results as a JSON object with three keys: "TP", "FP", "FN", where each key maps to a list of strings (the statements).
+Example: {{"TP": ["Statement A is true."], "FP": ["Statement B is false."], "FN": ["Statement C was missed."]}}
+
+Ground Truth Answer:
+{ground_truth}
+
+Generated Answer:
+{answer}
+
+Factual Analysis (TP, FP, FN JSON):"""
+
+CUSTOM_EVAL_ANSWER_CORRECTNESS_SEMANTIC_TEMPLATE = """Rate the overall semantic similarity between the generated answer and the ground truth answer.
+Consider if they convey the same meaning, even if the wording is different.
+Score on a scale from 0.0 (completely different meaning) to 1.0 (identical meaning).
+Provide only the numerical score.
+
+Ground Truth Answer:
+{ground_truth}
+
+Generated Answer:
+{answer}
+
+Semantic Similarity Score (0.0-1.0):"""
+
 # Greeting Templates
 GREETING_DETECTION_TEMPLATE = """Analyze if this is a greeting or small talk and provide a friendly response: {query}
 

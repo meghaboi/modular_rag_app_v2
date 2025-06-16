@@ -60,7 +60,8 @@ class TokenCostManager:
         "claude-3-opus": {"input": 0.015, "output": 0.075}, 
         "claude-3-sonnet": {"input": 0.003, "output": 0.015},
         "claude-3-haiku": {"input": 0.00025, "output": 0.00125},
-        "claude-3-7-sonnet": {"input": 0.003, "output": 0.015}, # Specific version used by factory
+        "claude-3-7-sonnet": {"input": 0.003, "output": 0.015},
+        "claude-4-sonnet": {"input": 0.003, "output": 0.015},
         
         # Google
         # Gemini 1.5 Flash: $0.35/1M input, $0.70/1M output (for <128K context) -> 0.00035 / 0.00070 per 1K
@@ -90,10 +91,7 @@ class TokenCostManager:
     def calculate_cost(model_name: str, input_tokens: int, output_tokens: int) -> Optional[float]:
         if not model_name:
             return 0.0
-            
-        # Normalize model name for matching.
-        # Expected format from llm.get_model_name() is typically like 'gpt-4', 'claude-3-opus-20240229', etc.
-        # Normalization handles potential spaces (though not common in current names) and ensures lowercase.
+
         normalized_model_name = model_name.lower().replace(' ', '-')
         
         model_pricing = TokenCostManager.PRICING_DATA.get(normalized_model_name)

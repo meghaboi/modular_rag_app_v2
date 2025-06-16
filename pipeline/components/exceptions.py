@@ -1,32 +1,20 @@
 from typing import Optional, Dict, Any
 
-class PipelineException(Exception):
-    """Base exception class for pipeline-related errors"""
+class RAGPipelineException(Exception):
+    """Base exception for all RAG pipeline-related errors."""
     def __init__(self, message: str, config: Optional[Dict[str, Any]] = None):
         self.message = message
         self.config = config
         super().__init__(self.message)
 
-class PipelineInitializationError(PipelineException):
-    """Raised when pipeline initialization fails"""
+class RAGPipelineInitializationError(RAGPipelineException):
+    """Raised when RAG pipeline initialization fails."""
     pass
 
-class PipelineExecutionError(PipelineException):
-    """Raised when pipeline execution fails"""
-    pass 
-
-class RAGPipelineError(Exception):
-    """Base exception class for RAG pipeline errors"""
+class RAGPipelineExecutionError(RAGPipelineException):
+    """Raised when RAG pipeline execution fails."""
     pass
 
-class RAGPipelineInitializationError(RAGPipelineError):
-    """Raised when pipeline initialization fails"""
+class RAGPipelineEvaluationError(RAGPipelineException):
+    """Raised when RAG pipeline evaluation fails."""
     pass
-
-class RAGPipelineExecutionError(RAGPipelineError):
-    """Raised when pipeline execution fails"""
-    pass
-
-class RAGPipelineEvaluationError(RAGPipelineError):
-    """Raised when pipeline evaluation fails"""
-    pass 

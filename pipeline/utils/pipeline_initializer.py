@@ -2,14 +2,9 @@ import logging
 import time
 import os
 import streamlit as st
-from typing import Optional
-from utils.enums import (
-    EmbeddingModelType,
-    RerankerModelType,
-    LLMModelType,
-    VectorStoreType,
-    ChunkingStrategyType
-)
+from typing import Dict, Any
+from pipeline.components.config import PipelineConfig
+from pipeline.components.exceptions import RAGPipelineInitializationError
 from models.embedding_models import EmbeddingModelFactory
 from models.vector_stores import VectorStoreFactory
 from models.rerankers import RerankerFactory
@@ -18,76 +13,76 @@ from models.chunking_strategies import ChunkingStrategyFactory
 from pipeline.rag_pipeline import RAGPipeline
 
 class PipelineInitializer:
-    @staticmethod
-    def initialize_pipeline(
-        file_path: str,
-        embedding_model_enum: EmbeddingModelType,
-        vector_store_enum: VectorStoreType,
-        reranker_enum: RerankerModelType,
-        llm_enum: LLMModelType,
-        chunking_strategy_enum: ChunkingStrategyType,
-        hybrid_alpha: float,
-        chunk_size: int,
-        chunk_overlap: int,
-        top_k: int
-    ) -> Optional[RAGPipeline]:
-        """Initialize RAG pipeline with selected configuration"""
-        logging.info(f"Attempting to initialize RAG pipeline with config:")
-        logging.info(f"  Embedding: {embedding_model_enum.value}, Vector Store: {vector_store_enum.value}, Reranker: {reranker_enum.value}, LLM: {llm_enum.value}")
-        logging.info(f"  Chunking: {chunking_strategy_enum.value}, Size: {chunk_size}, Overlap: {chunk_overlap}, Top K: {top_k}, Hybrid Alpha: {hybrid_alpha}")
+    """Handles the creation and initialization of a RAG pipeline."""
 
-        if not file_path or not os.path.exists(file_path):
-            logging.error("Pipeline initialization failed: Invalid file path.")
-            return None
+    def __init__(self, config: PipelineConfig):
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+
+    def initialize_pipeline(self) -> RAGPipeline:
+        """Initialize RAG pipeline with the given configuration."""
+        self._log_initialization_start()
+        self._validate_file_path()
 
         try:
-            # Initialize components
-            embedding_model_instance = EmbeddingModelFactory.create_model(embedding_model_enum)
-
-            if vector_store_enum == VectorStoreType.HYBRID:
-                vector_store_instance = VectorStoreFactory.create_store(vector_store_enum, alpha=hybrid_alpha)
-            else:
-                vector_store_instance = VectorStoreFactory.create_store(vector_store_enum)
-
-            reranker_instance = None
-            if reranker_enum != RerankerModelType.NONE:
-                if reranker_enum == RerankerModelType.LLM:
-                    llm_instance = LLMFactory.create_llm(llm_enum)
-                    reranker_instance = RerankerFactory.create_reranker(reranker_enum, llm_client=llm_instance)
-                else:
-                    reranker_instance = RerankerFactory.create_reranker(reranker_enum)
-
-            if 'llm_instance' not in locals() or llm_instance is None:
-                llm_instance = LLMFactory.create_llm(llm_enum)
-            
-            chunking_strategy_instance = ChunkingStrategyFactory.get_strategy(chunking_strategy_enum.value)
-
-            is_in_evaluation_mode = st.session_state.mode == "evaluation"
-
-            # Create RAG pipeline
-            pipeline = RAGPipeline(
-                embedding_model=embedding_model_instance,
-                vector_store=vector_store_instance,
-                reranker=reranker_instance,
-                llm=llm_instance,
-                top_k=top_k,
-                chunking_strategy=chunking_strategy_instance,
-                evaluation_mode=is_in_evaluation_mode 
-            )
-
-            # Index documents
-            logging.info(f"Indexing documents from: {file_path}")
-            index_start_time = time.time()
-            try:
-                pipeline.index_documents(file_path, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-            except Exception as index_e:
-                logging.error(f"Error during document indexing: {index_e}", exc_info=True)
-                return None
-            index_end_time = time.time()
-            logging.info(f"Document indexing completed in {index_end_time - index_start_time:.2f} seconds.")
-
+            components = self._create_pipeline_components()
+            pipeline = RAGPipeline(**components, evaluation_mode=self.config.evaluation_mode)
+            self._index_documents(pipeline)
+            self.logger.info("RAG pipeline initialized successfully.")
             return pipeline
-
         except Exception as e:
-            logging.error(f"Error initializing RAG pipeline: {e}", exc_info=True)
-            return None
+            self.logger.error(f"Failed to initialize RAG pipeline: {e}", exc_info=True)
+            raise RAGPipelineInitializationError(f"Pipeline initialization failed: {e}") from e
+
+    def _log_initialization_start(self):
+        """Logs the start of the pipeline initialization process."""
+        self.logger.info("Attempting to initialize RAG pipeline with config:")
+        self.logger.info(f"  Embedding: {self.config.embedding_model_type.value}")
+        self.logger.info(f"  Vector Store: {self.config.vector_store_type.value}")
+        self.logger.info(f"  Reranker: {self.config.reranker_type.value}")
+        self.logger.info(f"  LLM: {self.config.llm_type.value}")
+        self.logger.info(f"  Chunking: {self.config.chunking_strategy_type.value}")
+
+    def _validate_file_path(self):
+        """Validates the existence of the input file path."""
+        if not self.config.file_path or not os.path.exists(self.config.file_path):
+            raise RAGPipelineInitializationError("Invalid or non-existent file path provided.")
+
+    def _create_pipeline_components(self) -> Dict[str, Any]:
+        """Creates and returns a dictionary of pipeline components."""
+        embedding_model = EmbeddingModelFactory.create_model(self.config.embedding_model_type)
+        vector_store = VectorStoreFactory.create_store(
+            self.config.vector_store_type, alpha=self.config.hybrid_alpha
+        )
+        llm = LLMFactory.create_llm(self.config.llm_type)
+        reranker = RerankerFactory.create_reranker(
+            self.config.reranker_type, llm_client=llm
+        )
+        chunking_strategy = ChunkingStrategyFactory.get_strategy(
+            self.config.chunking_strategy_type.value
+        )
+
+        return {
+            "embedding_model": embedding_model,
+            "vector_store": vector_store,
+            "reranker": reranker,
+            "llm": llm,
+            "top_k": self.config.top_k,
+            "chunking_strategy": chunking_strategy,
+        }
+
+    def _index_documents(self, pipeline: RAGPipeline):
+        """Indexes documents into the pipeline."""
+        self.logger.info(f"Indexing documents from: {self.config.file_path}")
+        start_time = time.time()
+        try:
+            pipeline.index_documents(
+                self.config.file_path,
+                chunk_size=self.config.chunk_size,
+                chunk_overlap=self.config.chunk_overlap,
+            )
+        except Exception as e:
+            raise RAGPipelineInitializationError(f"Document indexing failed: {e}") from e
+        
+        duration = time.time() - start_time
+        self.logger.info(f"Document indexing completed in {duration:.2f} seconds.")

@@ -1,16 +1,14 @@
-from .exceptions import PipelineException, PipelineInitializationError, PipelineExecutionError
+from .exceptions import RAGPipelineException, RAGPipelineInitializationError, RAGPipelineExecutionError
 from .config import PipelineConfig
 from .result import PipelineResult
-from .model_combination import ModelCombination
 from .progress import ProgressReporter, StreamlitProgressReporter
 
 __all__ = [
-    'PipelineException',
-    'PipelineInitializationError',
-    'PipelineExecutionError',
+    'RAGPipelineException',
+    'RAGPipelineInitializationError',
+    'RAGPipelineExecutionError',
     'PipelineConfig',
     'PipelineResult',
-    'ModelCombination',
     'ProgressReporter',
     'StreamlitProgressReporter'
 ] 

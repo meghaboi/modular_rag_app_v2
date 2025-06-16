@@ -169,11 +169,11 @@ class MistralEmbedding(EmbeddingModel):
                     current_batch_tokens = 0
                 
                 # This is a big text that needs special handling
-                # For simplicity, we'll just put it in its own batch
+                # For simplicity; we'll just put it in its own batch
                 batches.append([text])
                 continue
             
-            # If adding this text would exceed batch token limit, create a new batch
+            # If adding this text would exceed the batch token limit, create a new batch
             if current_batch_tokens + text_tokens > max_tokens_per_batch:
                 batches.append(current_batch)
                 current_batch = [text]
@@ -182,7 +182,7 @@ class MistralEmbedding(EmbeddingModel):
                 current_batch.append(text)
                 current_batch_tokens += text_tokens
         
-        # Don't forget the last batch
+        # Remember the last batch
         if current_batch:
             batches.append(current_batch)
         

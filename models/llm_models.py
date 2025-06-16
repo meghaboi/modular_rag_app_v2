@@ -264,13 +264,13 @@ class GeminiLLM(StreamingLLM):
                 if hasattr(response, 'candidates') and response.candidates and response.candidates[0].content.parts:
                     return "".join(part.text for part in response.candidates[0].content.parts), None
             except:
-                pass  # Original error is more informative
+                pass
             print(f"Error during Gemini API call: {e}")
             return "Error: Could not get response from model.", None
 
     def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False,
                         system_prompt_override: Optional[str] = None) -> Iterator[str]:
-        """Stream generate text from a prompt and optional context.
+        """Stream generates text from a prompt and optional context.
         Note: Gemini streaming API does not provide token usage per chunk or easily post-stream.
         Call get_last_call_usage() after a non-streaming generate() for usage info.
         """
@@ -372,7 +372,7 @@ class ClaudeLLM(StreamingLLM):
             return "Error: Could not get response from model.", None
 
     def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Iterator[str]:
-        """Stream generate text from a prompt and optional context"""
+        """Stream generates text from a prompt and optional context"""
         
         if context:
             user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)

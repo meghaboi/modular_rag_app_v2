@@ -136,7 +136,44 @@ class GreetingPromptProvider(BasePromptProvider):
             'greeting_detection': prompt_templates.GREETING_DETECTION_TEMPLATE,
         }
 
-# Factory function to get the appropriate provider
+class EvaluatorPromptProvider(BasePromptProvider):
+    """Provider for evaluator-related prompts."""
+    
+    def _load_templates(self):
+        self.templates = {
+            'answer_relevance': prompt_templates.EVAL_ANSWER_RELEVANCE_TEMPLATE,
+            'context_relevance': prompt_templates.EVAL_CONTEXT_RELEVANCE_TEMPLATE,
+            'groundedness': prompt_templates.EVAL_GROUNDEDNESS_TEMPLATE,
+            'faithfulness': prompt_templates.EVAL_FAITHFULNESS_TEMPLATE,
+            'custom_context_recall_statements': prompt_templates.CUSTOM_EVAL_CONTEXT_RECALL_STATEMENTS_TEMPLATE,
+            'custom_context_recall_attribution': prompt_templates.CUSTOM_EVAL_CONTEXT_RECALL_ATTRIBUTION_TEMPLATE,
+            'custom_context_precision_relevance': prompt_templates.CUSTOM_EVAL_CONTEXT_PRECISION_RELEVANCE_TEMPLATE,
+            'custom_answer_relevancy_qgen': prompt_templates.CUSTOM_EVAL_ANSWER_RELEVANCY_QGEN_TEMPLATE,
+            'custom_answer_relevancy_similarity': prompt_templates.CUSTOM_EVAL_ANSWER_RELEVANCY_SIMILARITY_TEMPLATE,
+            'custom_faithfulness_statements': prompt_templates.CUSTOM_EVAL_FAITHFULNESS_STATEMENTS_TEMPLATE,
+            'custom_faithfulness_inference': prompt_templates.CUSTOM_EVAL_FAITHFULNESS_INFERENCE_TEMPLATE,
+            'custom_answer_correctness_factual': prompt_templates.CUSTOM_EVAL_ANSWER_CORRECTNESS_FACTUAL_TEMPLATE,
+            'custom_answer_correctness_semantic': prompt_templates.CUSTOM_EVAL_ANSWER_CORRECTNESS_SEMANTIC_TEMPLATE,
+        }
+
+    def get_prompt(self, template_name: str, **kwargs) -> str:
+        """
+        Get a prompt by filling in the template with the provided arguments.
+        
+        Args:
+            template_name: Name of the template to use
+            **kwargs: Variables to fill in the template
+            
+        Returns:
+            str: The filled prompt
+        """
+        if template_name == 'answer_relevance':
+            if 'ground_truth' in kwargs and kwargs['ground_truth']:
+                kwargs['ground_truth_section'] = 'Ground Truth Answer: {ground_truth}'
+            else:
+                kwargs['ground_truth_section'] = ''
+        return super().get_prompt(template_name, **kwargs)
+
 def get_provider(provider_type: str) -> BasePromptProvider:
     """
     Factory function to get the appropriate prompt provider.
@@ -157,7 +194,8 @@ def get_provider(provider_type: str) -> BasePromptProvider:
         'error': ErrorPromptProvider,
         'ui': UIPromptProvider,
         'reranker': RerankerPromptProvider,
-        'greeting': GreetingPromptProvider
+        'greeting': GreetingPromptProvider,
+        'evaluator': EvaluatorPromptProvider
     }
     
     if provider_type not in providers:
