@@ -42,7 +42,6 @@ def get_config_by_prompt_nature(query: str) -> SubjectConfig:
     )
     return config
 
-
 class NatureBasedRAGUpdater:
     """Handles dynamic RAG configuration updates based on prompt nature."""
 
@@ -131,7 +130,6 @@ class NatureBasedRAGUpdater:
         self.session_state.top_k = new_config.top_k
         self.session_state.hybrid_alpha = new_config.hybrid_alpha
         self.session_state.pipeline = pipeline_instance
-
 
 def update_rag_configuration(query: str) -> bool:
     """

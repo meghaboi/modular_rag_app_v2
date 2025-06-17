@@ -1,11 +1,8 @@
 import os
-import logging
 from utils.enums import (
     EmbeddingModelType,
     RerankerModelType,
     LLMModelType,
-    VectorStoreType,
-    ChunkingStrategyType
 )
 
 def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_enum):
@@ -15,7 +12,7 @@ def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_e
 
     openai_needed = (embedding_model_enum == EmbeddingModelType.OPENAI or
                      llm_enum in [LLMModelType.OPENAI_GPT35, LLMModelType.OPENAI_GPT4] or
-                     True) # OpenAI TTS always needs it
+                     True)
     cohere_needed = (embedding_model_enum == EmbeddingModelType.COHERE or
                      reranker_enum in [RerankerModelType.COHERE_V2, RerankerModelType.COHERE_V3, RerankerModelType.COHERE_MULTILINGUAL])
     gemini_needed = (embedding_model_enum == EmbeddingModelType.GEMINI or

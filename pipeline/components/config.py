@@ -4,7 +4,7 @@ from typing import Dict, Any, Type, ClassVar
 from dataclasses import dataclass, field
 
 from utils.enums import (
-    RerankerModelType, LLMModelType, VectorStoreType,
+    EmbeddingModelType, RerankerModelType, LLMModelType, VectorStoreType,
     ChunkingStrategyType
 )
 
@@ -22,6 +22,7 @@ class PipelineConfig:
     # --- Constants for dictionary keys (for serialization) ---
     class Keys:
         FILE_PATH = "file_path"
+        EMBEDDING_MODEL = "embedding_model"
         VECTOR_STORE = "vector_store"
         RERANKER = "reranker"
         LLM = "llm"
@@ -34,6 +35,7 @@ class PipelineConfig:
 
     # --- Configuration fields ---
     file_path: str
+    embedding_model_type: EmbeddingModelType
     vector_store_type: VectorStoreType
     reranker_type: RerankerModelType
     llm_type: LLMModelType
@@ -68,6 +70,7 @@ class PipelineConfig:
         """Create a default configuration with the given file path."""
         return cls(
             file_path=file_path,
+            embedding_model_type=EmbeddingModelType.OPENAI_EMBEDDINGS,
             vector_store_type=VectorStoreType.CHROMA,
             reranker_type=RerankerModelType.NONE,
             llm_type=LLMModelType.CLAUDE_3_SONNET,
@@ -78,6 +81,7 @@ class PipelineConfig:
         """Convert config to a dictionary for logging and storage."""
         return {
             self.Keys.FILE_PATH: self.file_path,
+            self.Keys.EMBEDDING_MODEL: self.embedding_model_type.value,
             self.Keys.VECTOR_STORE: self.vector_store_type.value,
             self.Keys.RERANKER: self.reranker_type.value,
             self.Keys.LLM: self.llm_type.value,
@@ -94,6 +98,7 @@ class PipelineConfig:
         """Create a PipelineConfig from a dictionary."""
         return cls(
             file_path=config_dict[cls.Keys.FILE_PATH],
+            embedding_model_type=EmbeddingModelType(config_dict[cls.Keys.EMBEDDING_MODEL]),
             vector_store_type=VectorStoreType(config_dict[cls.Keys.VECTOR_STORE]),
             reranker_type=RerankerModelType(config_dict[cls.Keys.RERANKER]),
             llm_type=LLMModelType(config_dict[cls.Keys.LLM]),

@@ -3,7 +3,6 @@ import logging
 import os
 from utils.subject_configs import (
     SUBJECT_CONFIGS,
-    get_subject_config,
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_VECTOR_STORE,
     DEFAULT_RERANKER_MODEL,
@@ -16,6 +15,7 @@ from utils.subject_configs import (
 )
 from pipeline.nature_handling import update_rag_configuration
 from pipeline.utils.pipeline_initializer import PipelineInitializer
+from pipeline.components.config import PipelineConfig
 from utils.enums import (
     EmbeddingModelType,
     RerankerModelType,
@@ -25,16 +25,10 @@ from utils.enums import (
 )
 from utils.file_handling.file_utils import save_uploaded_file
 from utils.api_management.api_utils import check_api_keys
-from models.embedding_models import EmbeddingModelFactory
-from models.vector_stores import VectorStoreFactory
-from models.rerankers import RerankerFactory
 from models.llm_models import LLMFactory
-from pipeline.rag_pipeline import RAGPipeline
-from models.chunking_strategies import ChunkingStrategyFactory
-from pipeline.summarizer_module import extract_main_points, generate_summary_for_point
+from pipeline.summarizer_module import extract_main_points
 from prompts import get_provider
 
-# Constants
 SIDEBAR_IMAGE_URL = "https://i.postimg.cc/DfLpxwZJ/Chat-GPT-Image-May-7-2025-11-10-13-AM.png"
 SIDEBAR_IMAGE_WIDTH = 80
 MIN_CHUNK_SIZE = 100
@@ -45,8 +39,7 @@ CHUNK_OVERLAP_STEP = 50
 MIN_TOP_K = 1
 MAX_TOP_K = 10
 POINT_EXTRACTION_LLM = LLMModelType.CLAUDE_4_SONNET
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
-
+MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024 
 
 class SessionStateManager:
     """Manages Streamlit session state initialization and updates."""
@@ -443,16 +436,31 @@ class SummaryManager:
             st.sidebar.error("JEFF is not initialized. Please initialize JEFF first from the settings below.")
             return
 
-        summarizer_provider = get_provider('summarizer')
-        system_prompt = summarizer_provider.get_prompt('point_summary', topic=selected_point)
-
         with st.spinner(f"Summarizing '{selected_point}'..."):
-            summary_text = generate_summary_for_point(
-                selected_point,
-                st.session_state.pipeline,
-                system_prompt
-            )
-            st.session_state.current_summary = summary_text
+            try:
+                pipeline = st.session_state.pipeline
+                contexts = pipeline.retrieve_context(selected_point)
+                if not contexts:
+                    st.sidebar.warning(f"No relevant context found for '{selected_point}'.")
+                    st.session_state.current_summary = f"Could not find any information about '{selected_point}' in the document."
+                    return
+
+                context_str = "\n\n".join(contexts)
+
+                summarizer_provider = get_provider('summarizer')
+                system_prompt = summarizer_provider.get_prompt(
+                    'point_summary',
+                    topic=selected_point,
+                    context=context_str
+                )
+
+                # The generate method now returns a tuple (text, usage_info)
+                summary_text, _ = pipeline.llm.generate(prompt=system_prompt)
+                st.session_state.current_summary = summary_text
+            except Exception as e:
+                logging.error(f"Error during point summarization for '{selected_point}': {e}", exc_info=True)
+                st.sidebar.error(f"An error occurred while summarizing. Please check the logs.")
+                st.session_state.current_summary = "Failed to generate summary due to an error."
 
     @staticmethod
     def _render_current_summary():
@@ -500,7 +508,7 @@ class StatusManager:
         return (st.session_state.file_path and
                 os.path.exists(st.session_state.file_path))
 
-class PipelineInitializer:
+class SidebarPipelineInitializer:
     """Handles pipeline initialization logic."""
 
     @staticmethod
@@ -508,7 +516,7 @@ class PipelineInitializer:
         """Render pipeline initialization controls."""
         st.sidebar.markdown("---")
 
-        disable_init = PipelineInitializer._should_disable_initialization()
+        disable_init = SidebarPipelineInitializer._should_disable_initialization()
 
         if st.sidebar.button(
                 "🚀 Initialize JEFF",
@@ -516,7 +524,7 @@ class PipelineInitializer:
                 help="Load textbook with current settings.",
                 disabled=disable_init
         ):
-            PipelineInitializer._handle_initialization_request()
+            SidebarPipelineInitializer._handle_initialization_request()
         elif disable_init:
             st.sidebar.caption("Upload textbook to enable.")
 
@@ -529,14 +537,23 @@ class PipelineInitializer:
     @staticmethod
     def _handle_initialization_request():
         """Handle pipeline initialization request."""
-        model_enums = PipelineInitializer._get_model_enums()
-        missing_keys = check_api_keys(**model_enums)
+        model_enums_for_check = SidebarPipelineInitializer._get_model_enums()
+        missing_keys = check_api_keys(**model_enums_for_check)
 
         if missing_keys:
             st.sidebar.error(f"Cannot initialize. Missing keys: {', '.join(missing_keys)}", icon="🔑")
             return
 
-        PipelineInitializer._initialize_pipeline(model_enums)
+        # For PipelineConfig, keys must match the dataclass fields
+        model_types_for_config = {
+            'embedding_model_type': model_enums_for_check['embedding_model_enum'],
+            'vector_store_type': model_enums_for_check['vector_store_enum'],
+            'reranker_type': model_enums_for_check['reranker_enum'],
+            'llm_type': model_enums_for_check['llm_enum'],
+            'chunking_strategy_type': ChunkingStrategyType.from_string(st.session_state.chunking_strategy)
+        }
+
+        SidebarPipelineInitializer._initialize_pipeline(model_types_for_config)
 
     @staticmethod
     def _get_model_enums():
@@ -546,21 +563,27 @@ class PipelineInitializer:
             'vector_store_enum': VectorStoreType.from_string(st.session_state.vector_store),
             'reranker_enum': RerankerModelType.from_string(st.session_state.reranker),
             'llm_enum': LLMModelType.from_string(st.session_state.llm_model),
-            'chunking_strategy_enum': ChunkingStrategyType.from_string(st.session_state.chunking_strategy)
         }
-
     @staticmethod
-    def _initialize_pipeline(model_enums):
+    def _initialize_pipeline(model_types):
         """Initialize the pipeline with current configuration."""
         with st.spinner("Warming up JEFF's brain..."):
-            pipeline_instance = PipelineInitializer.initialize_pipeline(
-                file_path=st.session_state.file_path,
-                chunk_size=st.session_state.chunk_size,
-                chunk_overlap=st.session_state.chunk_overlap,
-                top_k=st.session_state.top_k,
-                hybrid_alpha=st.session_state.get('hybrid_alpha', DEFAULT_HYBRID_ALPHA),
-                **model_enums
-            )
+            try:
+                config = PipelineConfig(
+                    file_path=st.session_state.file_path,
+                    chunk_size=st.session_state.chunk_size,
+                    chunk_overlap=st.session_state.chunk_overlap,
+                    top_k=st.session_state.top_k,
+                    hybrid_alpha=st.session_state.get('hybrid_alpha', DEFAULT_HYBRID_ALPHA),
+                    evaluation_mode=(st.session_state.mode == 'evaluation'),
+                    **model_types
+                )
+                initializer = PipelineInitializer(config)
+                pipeline_instance = initializer.initialize_pipeline()
+            except Exception as e:
+                logging.error(f"Error during pipeline initialization: {e}", exc_info=True)
+                st.sidebar.error(f"Initialization failed: {e}")
+                pipeline_instance = None
 
         if pipeline_instance:
             st.session_state.pipeline = pipeline_instance
@@ -591,7 +614,7 @@ def display_settings_panel():
     _render_mode_specific_controls()
     st.sidebar.markdown("---")
 
-    PipelineInitializer.render_initialization_controls()
+    SidebarPipelineInitializer.render_initialization_controls()
     st.sidebar.markdown("---")
 
 def _render_header():

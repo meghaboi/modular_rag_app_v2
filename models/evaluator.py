@@ -6,7 +6,6 @@ import re
 import json
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
 from prompts.prompt_providers import get_provider
 
 from utils.enums import EvaluationBackendType, EvaluationMetricType

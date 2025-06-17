@@ -95,23 +95,17 @@ class ChatInterface:
 
     def _process_user_query(self, user_query: str):
         """Process user query with initialized pipeline."""
-        self._update_rag_configuration(user_query)
-        
         if self._is_greeting(user_query):
             return
             
+        self._update_rag_configuration(user_query)
         self._generate_response(user_query)
 
     def _update_rag_configuration(self, user_query: str):
         """Update RAG configuration based on user query."""
         logging.info(f"Updating RAG configuration for query: {user_query[:self.MAX_QUERY_LOG_LENGTH]}...")
         
-        current_subject = st.session_state.get('current_subject', None)
-        config_status = update_rag_configuration(
-            query=user_query,
-            pipeline=st.session_state.pipeline,
-            subject=current_subject
-        )
+        config_status = update_rag_configuration(query=user_query)
         self._handle_config_status(config_status)
 
     def _is_greeting(self, user_query: str):
@@ -294,6 +288,8 @@ class ResponseProcessor:
                 stream_placeholder.markdown(full_response + ChatInterface.STREAMING_CURSOR)
             else:
                 logging.warning("Received None chunk from stream_run, skipping")
+        
+        stream_placeholder.markdown(full_response)
                 
         return full_response
 
@@ -302,7 +298,6 @@ class ResponseProcessor:
         elapsed_time = time.time() - start_time
         
         with tab_text:
-            st.markdown(response_content)
             st.write(f"_(JEFF cooked that up in {elapsed_time:.2f} seconds)_")
         
         self._generate_and_display_audio(response_content, tab_audio)
@@ -336,6 +331,8 @@ class ResponseProcessor:
 
 def display_chat_interface():
     """Factory function to create and display chat interface."""
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
     chat_interface = ChatInterface()
     chat_interface.display()
 
