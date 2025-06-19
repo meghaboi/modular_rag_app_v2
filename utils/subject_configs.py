@@ -18,14 +18,14 @@ class SubjectConfig:
 # Default configuration values
 DEFAULT_CHUNK_SIZE = 500
 DEFAULT_CHUNK_OVERLAP = 50
-DEFAULT_TOP_K = 3
+DEFAULT_TOP_K = 5
 DEFAULT_HYBRID_ALPHA = 0.5
 
-DEFAULT_EMBEDDING_MODEL = EmbeddingModelType.MISTRAL
+DEFAULT_EMBEDDING_MODEL = EmbeddingModelType.COHERE
 DEFAULT_VECTOR_STORE = VectorStoreType.CHROMA
-DEFAULT_RERANKER_MODEL = RerankerModelType.VOYAGE_2
+DEFAULT_RERANKER_MODEL = RerankerModelType.VOYAGE_1
 DEFAULT_LLM_MODEL = LLMModelType.CLAUDE_4_SONNET
-DEFAULT_CHUNKING_STRATEGY = ChunkingStrategyType.HIERARCHICAL
+DEFAULT_CHUNKING_STRATEGY = ChunkingStrategyType.PARAGRAPH
 
 SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
     "general": SubjectConfig(
@@ -35,69 +35,69 @@ SUBJECT_CONFIGS: Dict[str, SubjectConfig] = {
         hybrid_alpha=DEFAULT_HYBRID_ALPHA
     ),
     "mathematics": SubjectConfig(
-        chunk_size=200,
+        chunk_size=500,
         chunk_overlap=50,
         top_k=2,
         hybrid_alpha=0.7
     ),
     "science": SubjectConfig(
-        chunk_size=400,
-        chunk_overlap=75,
+        chunk_size=500,
+        chunk_overlap=50,
         top_k=4,
         hybrid_alpha=0.6
     ),
     "history": SubjectConfig(
-        chunk_size=600,
-        chunk_overlap=100,
+        chunk_size=500,
+        chunk_overlap=50,
         top_k=5,
         hybrid_alpha=0.4
     ),
     "literature": SubjectConfig(
         chunk_size=500,
-        chunk_overlap=100,
+        chunk_overlap=50,
         top_k=4,
         hybrid_alpha=0.5
     ),
     "computer_science": SubjectConfig(
-        chunk_size=350,
-        chunk_overlap=75,
+        chunk_size=500,
+        chunk_overlap=50,
         top_k=4,
         hybrid_alpha=0.7
     ),
     "medicine": SubjectConfig(
-        chunk_size=450,
-        chunk_overlap=100,
+        chunk_size=500,
+        chunk_overlap=50,
         top_k=5,
         hybrid_alpha=0.6
     ),
     "law": SubjectConfig(
-        chunk_size=550,
-        chunk_overlap=100,
+        chunk_size=500,
+        chunk_overlap=50,
         top_k=5,
         hybrid_alpha=0.4
     ),
     "question_answering": SubjectConfig(
-        chunk_size=256,
+        chunk_size=500,
         chunk_overlap=50,
         top_k=5,
         hybrid_alpha=0.75
     ),
     "summarization": SubjectConfig(
-        chunk_size=768,
-        chunk_overlap=150,
-        top_k=3,
+        chunk_size=500,
+        chunk_overlap=50,
+        top_k=4,
         hybrid_alpha=0.4
     ),
     "comparison": SubjectConfig(
-        chunk_size=512,
-        chunk_overlap=100,
-        top_k=4,
+        chunk_size=500,
+        chunk_overlap=50,
+        top_k=5,
         hybrid_alpha=0.6
     ),
     "code_generation": SubjectConfig(
-        chunk_size=384,
-        chunk_overlap=75,
-        top_k=4,
+        chunk_size=500,
+        chunk_overlap=50,
+        top_k=5,
         hybrid_alpha=0.7
     ),
     "general_discussion": SubjectConfig(

@@ -106,8 +106,6 @@ class NatureBasedRAGUpdater:
         return not (
             current_config.chunk_size == nature_config.chunk_size
             and current_config.chunk_overlap == nature_config.chunk_overlap
-            and current_config.top_k == nature_config.top_k
-            and current_config.hybrid_alpha == nature_config.hybrid_alpha
         )
 
     def _create_new_pipeline_config(self, base_config: PipelineConfig, nature_config: SubjectConfig) -> PipelineConfig:

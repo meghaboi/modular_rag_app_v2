@@ -143,8 +143,7 @@ class ChatInterface:
     def _handle_config_status(self, config_status):
         """Handle RAG configuration update status."""
         if config_status is False:
-            st.error("⚠️ Error updating RAG configuration. Using previous settings.")
-            logging.error("RAG configuration update failed.")
+            logging.info("No RAG configuration changes needed.")
         elif config_status is True:
             st.toast("✨ Smartly adjusted RAG settings for your query!")
             logging.info("RAG configuration updated successfully.")
