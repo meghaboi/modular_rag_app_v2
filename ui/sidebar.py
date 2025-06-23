@@ -181,7 +181,7 @@ class FileUploadHandler:
 
     @staticmethod
     def _extract_document_points():
-        """Extract main points from uploaded document."""
+        """Extract main points from uploaded document, then update config and initialize pipeline."""
         if FileUploadHandler._is_extraction_api_key_missing():
             st.session_state.point_extraction_llm_missing_keys = True
             st.sidebar.warning(f"API key for {POINT_EXTRACTION_LLM.value} needed for automatic point extraction.")
@@ -199,6 +199,48 @@ class FileUploadHandler:
 
             if not st.session_state.main_points:
                 st.sidebar.warning("Could not extract key points automatically.")
+                return
+
+            # --- Immediately update subject config and initialize pipeline ---
+            # For subject config, we use the main points as a proxy for subject/topic.
+            # If you have a more sophisticated mapping, replace this logic accordingly.
+            # Here, we use the first main point as the subject hint.
+            from pipeline.nature_handling import get_config_by_prompt_nature
+            from pipeline.components.config import PipelineConfig
+            from pipeline.utils.pipeline_initializer import PipelineInitializer
+            from utils.enums import (
+                EmbeddingModelType, VectorStoreType, RerankerModelType, LLMModelType, ChunkingStrategyType
+            )
+
+            # Determine subject config (use first main point as subject proxy)
+            subject_hint = st.session_state.main_points[0] if st.session_state.main_points else "general"
+            subject_config = get_config_by_prompt_nature(subject_hint)
+
+            # Build PipelineConfig using current UI/model selections and subject config
+            config = PipelineConfig(
+                file_path=st.session_state.file_path,
+                embedding_model_type=EmbeddingModelType.from_string(st.session_state.embedding_model),
+                vector_store_type=VectorStoreType.from_string(st.session_state.vector_store),
+                reranker_type=RerankerModelType.from_string(st.session_state.reranker),
+                llm_type=LLMModelType.from_string(st.session_state.llm_model),
+                chunking_strategy_type=ChunkingStrategyType.from_string(st.session_state.chunking_strategy),
+                chunk_size=subject_config.chunk_size,
+                chunk_overlap=subject_config.chunk_overlap,
+                top_k=subject_config.top_k,
+                hybrid_alpha=subject_config.hybrid_alpha,
+                evaluation_mode=(st.session_state.mode == 'evaluation')
+            )
+
+            # Initialize pipeline and store in session state
+            initializer = PipelineInitializer(config)
+            try:
+                pipeline_instance = initializer.initialize_pipeline()
+                st.session_state.pipeline = pipeline_instance
+                st.session_state.config_changed = False
+                st.sidebar.success("Pipeline initialized with updated config!")
+            except Exception as e:
+                st.sidebar.error(f"Pipeline initialization failed: {str(e)}")
+                logging.error(f"Pipeline initialization failed: {e}", exc_info=True)
 
         except Exception as e:
             st.sidebar.error(f"Error during point extraction: {str(e)}")
@@ -598,22 +640,35 @@ def display_settings_panel():
     SessionStateManager.initialize_default_state()
 
     _render_header()
+    st.sidebar.header("🧑‍🎓 Subject Selection")
     _handle_subject_selection()
-    _handle_mode_selection()
-    _handle_file_upload()
+    st.sidebar.markdown("")
 
+    st.sidebar.header("🧠 Mode Selection")
+    _handle_mode_selection()
+    st.sidebar.markdown("")
+
+    st.sidebar.header("📚 Load Textbook")
+    _handle_file_upload()
+    st.sidebar.markdown("---")
+
+    st.sidebar.header("🔎 System Status")
     StatusManager.render_status_panel()
     st.sidebar.markdown("---")
 
+    st.sidebar.header("📝 Document Summary")
     SummaryManager.render_summary_panel()
     st.sidebar.markdown("---")
 
+    st.sidebar.header("⚙️ Configuration")
     ConfigurationManager.render_configuration_panel(st.session_state.mode == "evaluation")
     st.sidebar.markdown("---")
 
+    st.sidebar.header("🛠️ Mode-Specific Controls")
     _render_mode_specific_controls()
     st.sidebar.markdown("---")
 
+    st.sidebar.header("🚦 Pipeline Initialization")
     SidebarPipelineInitializer.render_initialization_controls()
     st.sidebar.markdown("---")
 
@@ -629,7 +684,7 @@ def _handle_subject_selection():
         "Select Subject",
         subjects,
         index=subjects.index("general"),
-        help="Choose the subject of your textbook for optimal RAG configuration"
+        help="Choose the subject of your textbook for optimal RAG configuration."
     )
 
     if st.session_state.pipeline is not None and st.session_state.mode == "evaluation":
@@ -650,7 +705,7 @@ def _handle_mode_selection():
         options=list(mode_options.keys()),
         index=current_mode_index,
         key="mode_radio",
-        help="Switch between chatting and testing configurations."
+        help="Switch between chat and evaluation modes."
     )
 
     new_mode = mode_options[selected_mode_label]
@@ -659,15 +714,16 @@ def _handle_mode_selection():
 
 def _handle_file_upload():
     """Handle file upload."""
-    st.sidebar.header("📚 Load Textbook")
     uploaded_file = st.sidebar.file_uploader(
         "Upload .txt or .pdf file",
         type=['txt', 'pdf'],
-        key="file_uploader"
+        key="file_uploader",
+        help="Upload your textbook in .txt or .pdf format. Max size 50MB."
     )
 
     if uploaded_file is not None:
-        FileUploadHandler.process_uploaded_file(uploaded_file)
+        with st.spinner("Processing uploaded file..."):
+            FileUploadHandler.process_uploaded_file(uploaded_file)
 
 def _render_mode_specific_controls():
     """Render controls specific to current mode."""
@@ -676,11 +732,11 @@ def _render_mode_specific_controls():
 
 def _render_chat_controls():
     """Render chat mode specific controls."""
-    if st.sidebar.button("Clear Chat History", key="clear_chat"):
+    if st.sidebar.button("🗑️ Clear Chat History", key="clear_chat", help="Remove all previous chat messages."):
         st.session_state.messages = []
         st.rerun()
 
-    show_contexts_now = st.sidebar.checkbox("Show Contexts", value=st.session_state.show_contexts)
+    show_contexts_now = st.sidebar.checkbox("Show Contexts", value=st.session_state.show_contexts, help="Display retrieved context passages in chat mode.")
     if show_contexts_now != st.session_state.show_contexts:
         st.session_state.show_contexts = show_contexts_now
         st.rerun()

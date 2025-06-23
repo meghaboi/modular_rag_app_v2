@@ -54,21 +54,20 @@ class ChatInterface:
         st.markdown("Hey! Got questions about your textbook? Lay 'em on me. I'll break it down for ya.")
 
     def _initialize_welcome_message(self):
-        """Initialize welcome message if no messages exist."""
+        """Initialize welcome message if no messages exist (voice temporarily removed)."""
         if self._should_show_welcome():
-            welcome_audio = text_to_speech(self.welcome_message)
             welcome_message = self._create_message(
                 role="assistant",
-                content=self.welcome_message,
-                audio=welcome_audio
+                content=self.welcome_message
             )
             st.session_state.messages.append(welcome_message)
 
     def _display_message_history(self):
-        """Display all messages in the chat history."""
+        """Display all messages in the chat history (text only, voice temporarily removed)."""
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
-                display_message_with_audio(message, st.session_state.show_contexts)
+                st.write(message["content"])
+        # Voice/audio display temporarily removed
 
     def _handle_user_input(self):
         """Handle user input from chat interface."""
@@ -126,16 +125,13 @@ class ChatInterface:
             self._handle_query_error(e)
 
     def _handle_missing_pipeline(self):
-        """Handle the case when pipeline is not initialized."""
-        warning_audio = text_to_speech(self.warning_message)
-        
+        """Handle the case when pipeline is not initialized (voice temporarily removed)."""
         with st.chat_message("assistant"):
-            self.tab_creator.create_warning_tabs(self.warning_message, warning_audio)
+            self.tab_creator.create_warning_tabs(self.warning_message, None)
 
         warning_message = self._create_message(
             role="assistant",
-            content=self.warning_message,
-            audio=warning_audio
+            content=self.warning_message
         )
         st.session_state.messages.append(warning_message)
         st.stop()
@@ -151,16 +147,13 @@ class ChatInterface:
             logging.info("No RAG configuration changes needed.")
 
     def _handle_greeting(self, greeting_response: str):
-        """Handle greeting responses."""
-        greeting_audio = text_to_speech(greeting_response)
-        
+        """Handle greeting responses (voice temporarily removed)."""
         with st.chat_message("assistant"):
-            self.tab_creator.create_response_tabs(greeting_response, greeting_audio)
+            self.tab_creator.create_response_tabs(greeting_response, None)
 
         greeting_message = self._create_message(
             role="assistant",
-            content=greeting_response,
-            audio=greeting_audio
+            content=greeting_response
         )
         st.session_state.messages.append(greeting_message)
 
@@ -170,21 +163,20 @@ class ChatInterface:
         st.error("Sorry, I encountered an error processing your query. Please try again.")
 
     def _create_message(self, role: str, content: str, audio=None, contexts=None, elapsed_time=None):
-        """Create a message dictionary with consistent structure."""
+        """Create a message dictionary with consistent structure (voice temporarily removed)."""
         return {
             "role": role,
             "content": content,
-            "audio": audio,
+            # 'audio' field omitted
             "contexts": contexts or [],
             "elapsed_time": elapsed_time
         }
 
     def _save_assistant_message(self, response_data: dict):
-        """Save assistant message to session state."""
+        """Save assistant message to session state (voice temporarily removed)."""
         message = self._create_message(
             role="assistant",
             content=response_data["content"],
-            audio=response_data["audio"],
             contexts=response_data["contexts"],
             elapsed_time=response_data["elapsed_time"]
         )
@@ -194,34 +186,25 @@ class TabCreator:
     """Handles creation of UI tabs for different message types."""
     
     def create_response_tabs(self, content: str, audio_bytes):
-        """Create tabs for response display."""
-        tab_labels = [f"{ChatInterface.READ_TAB_ICON} Read Response", 
-                     f"{ChatInterface.AUDIO_TAB_ICON} Hear Response"]
-        tab_text, tab_audio = st.tabs(tab_labels)
-        
+        """Create tab for response display (text only, voice temporarily removed)."""
+        tab_labels = [f"{ChatInterface.READ_TAB_ICON} Read Response"]
+        (tab_text,) = st.tabs(tab_labels)
         with tab_text:
             st.write(content)
-            
-        with tab_audio:
-            self._display_audio_or_fallback(audio_bytes)
+        # Voice/audio tab temporarily removed
 
     def create_warning_tabs(self, warning_message: str, warning_audio):
-        """Create tabs for warning display."""
-        tab_labels = [f"{ChatInterface.READ_TAB_ICON} Read Message", 
-                     f"{ChatInterface.AUDIO_TAB_ICON} Hear Message"]
-        tab_text, tab_audio = st.tabs(tab_labels)
-        
+        """Create tab for warning display (text only, voice temporarily removed)."""
+        tab_labels = [f"{ChatInterface.READ_TAB_ICON} Read Message"]
+        (tab_text,) = st.tabs(tab_labels)
         with tab_text:
             st.warning(warning_message, icon="✋")
-            
-        with tab_audio:
-            self._display_audio_or_fallback(warning_audio)
+        # Voice/audio tab temporarily removed
 
     def create_streaming_tabs(self):
-        """Create tabs for streaming response."""
-        tab_labels = [f"{ChatInterface.READ_TAB_ICON} Read Response", 
-                     f"{ChatInterface.AUDIO_TAB_ICON} Hear Response"]
-        return st.tabs(tab_labels)
+        """Create tab for streaming response (text only, voice temporarily removed)."""
+        tab_labels = [f"{ChatInterface.READ_TAB_ICON} Read Response"]
+        return (st.tabs(tab_labels)[0],)
 
     def _display_audio_or_fallback(self, audio_bytes):
         """Display audio if available, otherwise show fallback message."""
@@ -250,20 +233,20 @@ class ResponseProcessor:
         self.tab_creator = TabCreator()
     
     def process_query(self, user_query: str):
-        """Process query and return response data."""
+        """Process query and return response data (text-only, voice temporarily removed)."""
         start_time = time.time()
         
         contexts = self._retrieve_contexts(user_query)
-        tab_text, tab_audio = self.tab_creator.create_streaming_tabs()
+        (tab_text,) = self.tab_creator.create_streaming_tabs()
         
         response_content = self._generate_streaming_response(user_query, tab_text)
-        elapsed_time = self._finalize_response(response_content, tab_text, tab_audio, start_time)
+        elapsed_time = self._finalize_response(response_content, tab_text, start_time)
         
         self._display_contexts_if_enabled(contexts)
         
         return {
             "content": response_content,
-            "audio": text_to_speech(response_content),
+            # 'audio' field removed
             "contexts": contexts,
             "elapsed_time": elapsed_time
         }
@@ -292,14 +275,13 @@ class ResponseProcessor:
                 
         return full_response
 
-    def _finalize_response(self, response_content: str, tab_text, tab_audio, start_time: float):
-        """Finalize response display with audio and timing."""
+    def _finalize_response(self, response_content: str, tab_text, start_time: float):
+        """Finalize response display with timing only (voice temporarily removed)."""
         elapsed_time = time.time() - start_time
         
         with tab_text:
             st.write(f"_(JEFF cooked that up in {elapsed_time:.2f} seconds)_")
-        
-        self._generate_and_display_audio(response_content, tab_audio)
+        # Audio display removed
         
         return elapsed_time
 

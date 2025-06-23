@@ -21,6 +21,7 @@ class ModelCombination:
     vector_store: VectorStoreType
     reranker: RerankerModelType
     llm: LLMModelType
+    chunking_strategy: ChunkingStrategyType
 
     def to_string(self) -> str:
         """Return a string representation of the model combination."""
@@ -41,11 +42,14 @@ class PermutationConfig:
     llm_models: List[LLMModelType] = field(default_factory=lambda: [
         LLMModelType.CLAUDE_3_SONNET, LLMModelType.GEMINI
     ])
+    chunking_strategies: List[ChunkingStrategyType] = field(default_factory=lambda: [
+        ChunkingStrategyType.PARAGRAPH
+    ])
 
     def get_permutations(self) -> List[ModelCombination]:
         """Generate all model combinations from the configuration."""
         product = itertools.product(
-            self.embedding_models, self.vector_stores, self.rerankers, self.llm_models
+            self.embedding_models, self.vector_stores, self.rerankers, self.llm_models, self.chunking_strategies
         )
         return [ModelCombination(*p) for p in product]
 
@@ -104,7 +108,8 @@ class PermutationRunner:
             embedding_model_enum=combo.embedding_model,
             vector_store_enum=combo.vector_store,
             reranker_enum=combo.reranker,
-            llm_enum=combo.llm
+            llm_enum=combo.llm,
+            chunking_strategy_enum=combo.chunking_strategy
         )
 
     def _create_skipped_result(self, combo: ModelCombination) -> Dict[str, Any]:

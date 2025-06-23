@@ -4,12 +4,31 @@ from typing import Dict, Any, Optional
 
 from pipeline.components.config import PipelineConfig
 from pipeline.components.result import PipelineResult
-from pipeline.components.exceptions import RAGPipelineExecutionError
 from models.evaluator import EvaluatorFactory, EvaluationBackendType, EvaluationMetricType
-from .pipeline_initializer import PipelineInitializer
+from pipeline.utils.pipeline_initializer import PipelineInitializer
 
 class PipelineRunner:
     """Manages the execution and evaluation of a RAG pipeline."""
+
+    @classmethod
+    def run_pipeline_with_config(cls, user_query: str, ground_truth: str = None, embedding_model_enum=None, vector_store_enum=None, reranker_enum=None, llm_enum=None,chunking_strategy_enum=None, **kwargs):
+        """
+        Convenience method to build PipelineConfig from enums/params and run the pipeline.
+        Accepts model enums and any additional pipeline params.
+        """
+        # Import here to avoid circular imports
+        from pipeline.components.config import PipelineConfig
+        config = PipelineConfig(
+            embedding_model=embedding_model_enum,
+            vector_store=vector_store_enum,
+            reranker=reranker_enum,
+            llm=llm_enum,
+            chunking_strategy=chunking_strategy_enum,
+            **kwargs
+        )
+        runner = cls(config, user_query, ground_truth)
+        return runner.run()
+
 
     def __init__(self, config: PipelineConfig, user_query: str, ground_truth: Optional[str] = None):
         self.config = config
@@ -57,15 +76,9 @@ class PipelineRunner:
             return {}
         
         ragas_scores = self._evaluate_with_backend(EvaluationBackendType.RAGAS_V2, response, contexts)
-        # custom_scores = self._evaluate_with_backend(EvaluationBackendType.CUSTOM, response, contexts)
-        
-        # Placeholder for aggregation until custom evaluation is fully implemented
-        # avg_custom_score = sum(custom_scores.values()) / len(custom_scores) if custom_scores else 0
 
         return {
             "ragas_evaluation_scores": ragas_scores,
-            # "custom_evaluation_scores": custom_scores,
-            # "avg_custom_score": avg_custom_score
         }
 
     def _evaluate_with_backend(self, backend: EvaluationBackendType, response: str, contexts: list) -> Dict[str, float]:
