@@ -15,6 +15,7 @@ from utils.enums import (
     ChunkingStrategyType
 )
 from pipeline.utils.pipeline_initializer import PipelineInitializer
+from pipeline.components.config import PipelineConfig
 
 class EvaluationInterface:
     """Handles the RAG evaluation interface for testing different configurations."""
@@ -147,18 +148,21 @@ class EvaluationInterface:
 
     def _initialize_pipeline_with_configuration(self, config_enums: Tuple[Any, ...]):
         """Initialize pipeline with the given configuration."""
-        return PipelineInitializer.initialize_pipeline(
+        config = PipelineConfig(
             file_path=st.session_state.file_path,
-            embedding_model_enum=config_enums[0],
-            vector_store_enum=config_enums[1],
-            reranker_enum=config_enums[2],
-            llm_enum=config_enums[3],
-            chunking_strategy_enum=config_enums[4],
+            embedding_model_type=config_enums[0],
+            vector_store_type=config_enums[1],
+            reranker_type=config_enums[2],
+            llm_type=config_enums[3],
+            chunking_strategy_type=config_enums[4],
             hybrid_alpha=st.session_state.hybrid_alpha,
             chunk_size=st.session_state.chunk_size,
             chunk_overlap=st.session_state.chunk_overlap,
-            top_k=st.session_state.top_k
+            top_k=st.session_state.top_k,
+            evaluation_mode=True  # or use st.session_state.evaluation_mode if available
         )
+        initializer = PipelineInitializer(config)
+        return initializer.initialize_pipeline()
 
     def _execute_single_evaluation(self, query: str, ground_truth: str, results_column):
         """Execute evaluation for a single configuration."""

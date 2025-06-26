@@ -245,6 +245,51 @@ class VoyageEmbedding(EmbeddingModel):
         return self.MODEL_DIMENSIONS.get(self._model_name, 1024)
 
 
+class QwenEmbedding(EmbeddingModel):
+    """Qwen3 Embedding model implementation using Hugging Face transformers."""
+    MODEL_NAME = "Qwen/Qwen3-Embedding-8B"
+    DIMENSION = 1024  # Based on HF card; update if needed
+
+    def __init__(self):
+        import torch
+        import torch.nn.functional as F
+        from transformers import AutoTokenizer, AutoModel
+        self._tokenizer = AutoTokenizer.from_pretrained(self.MODEL_NAME, padding_side='left')
+        self._model = AutoModel.from_pretrained(self.MODEL_NAME)
+        self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self._model.to(self._device)
+
+    def _last_token_pool(self, last_hidden_states, attention_mask):
+        left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
+        if left_padding:
+            return last_hidden_states[:, -1]
+        else:
+            sequence_lengths = attention_mask.sum(dim=1) - 1
+            batch_size = last_hidden_states.shape[0]
+            return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
+
+    def embed_query(self, query: str) -> List[float]:
+        batch_dict = self._tokenizer([query], padding=True, truncation=True, max_length=8192, return_tensors="pt")
+        batch_dict = {k: v.to(self._device) for k, v in batch_dict.items()}
+        with torch.no_grad():
+            outputs = self._model(**batch_dict)
+            embeddings = self._last_token_pool(outputs.last_hidden_state, batch_dict['attention_mask'])
+            embeddings = F.normalize(embeddings, p=2, dim=1)
+        return embeddings[0].cpu().tolist()
+
+    def embed_documents(self, documents: List[str]) -> List[List[float]]:
+        batch_dict = self._tokenizer(documents, padding=True, truncation=True, max_length=8192, return_tensors="pt")
+        batch_dict = {k: v.to(self._device) for k, v in batch_dict.items()}
+        with torch.no_grad():
+            outputs = self._model(**batch_dict)
+            embeddings = self._last_token_pool(outputs.last_hidden_state, batch_dict['attention_mask'])
+            embeddings = F.normalize(embeddings, p=2, dim=1)
+        return embeddings.cpu().tolist()
+
+    @property
+    def dimension(self) -> int:
+        return self.DIMENSION
+
 class EmbeddingModelFactory:
     """Factory for creating embedding models."""
     _model_map: Dict[EmbeddingModelType, Type[EmbeddingModel]] = {
@@ -252,7 +297,8 @@ class EmbeddingModelFactory:
         EmbeddingModelType.COHERE: CohereEmbedding,
         EmbeddingModelType.GEMINI: GeminiEmbedding,
         EmbeddingModelType.MISTRAL: MistralEmbedding,
-        EmbeddingModelType.VOYAGE: VoyageEmbedding
+        EmbeddingModelType.VOYAGE: VoyageEmbedding,
+        EmbeddingModelType.QWEN: QwenEmbedding
     }
 
     @classmethod

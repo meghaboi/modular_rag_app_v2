@@ -5,7 +5,7 @@ class TokenCounter:
     """Utility class for counting tokens in text"""
     
     def __init__(self, model_name: str = "gpt-3.5"):
-        """Initialize token counter with specified model"""
+        """Initialize token counter with a specified model"""
         try:
             # Try OpenAI's tokenizer first
             self.encoder = tiktoken.encoding_for_model(model_name)

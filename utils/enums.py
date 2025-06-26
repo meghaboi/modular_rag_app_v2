@@ -7,6 +7,7 @@ class EmbeddingModelType(Enum):
     GEMINI = "Gemini"
     MISTRAL = "Mistral"
     VOYAGE = "Voyage"  
+    QWEN = "Qwen"
     
     @classmethod
     def list(cls) -> List[str]:

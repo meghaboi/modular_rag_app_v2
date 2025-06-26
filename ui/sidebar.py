@@ -688,7 +688,7 @@ def _handle_subject_selection():
     )
 
     if st.session_state.pipeline is not None and st.session_state.mode == "evaluation":
-        update_rag_configuration(selected_subject, st.session_state.pipeline)
+        update_rag_configuration(selected_subject)
 
 def _handle_mode_selection():
     """Handle mode selection and switching."""

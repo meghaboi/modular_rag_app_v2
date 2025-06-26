@@ -50,7 +50,7 @@ class FAISSVectorStore(VectorStore):
         self._dimension = embeddings_np.shape[1]
         
         # Create FAISS index
-        self._index = self.faiss.IndexFlatL2(self._dimension)
+        self._index = self.faiss.IndexFlatIP(self._dimension)
         self._index.add(embeddings_np)
     
     def search(self, query_embedding: List[float], top_k: int = 5) -> List[Tuple[str, float]]:
