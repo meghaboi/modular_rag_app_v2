@@ -174,12 +174,19 @@ class EvaluatorPromptProvider(BasePromptProvider):
                 kwargs['ground_truth_section'] = ''
         return super().get_prompt(template_name, **kwargs)
 
+class ContextualChunkingPromptProvider(BasePromptProvider):
+    """Provider for contextual chunking prompts."""
+    def _load_templates(self):
+        self.templates = {
+            'contextual_chunking': prompt_templates.CONTEXTUAL_CHUNKING_PROMPT
+        }
+
 def get_provider(provider_type: str) -> BasePromptProvider:
     """
     Factory function to get the appropriate prompt provider.
     
     Args:
-        provider_type: Type of provider to get ('llm', 'summarizer', 'query', 'error', 'ui', 'reranker', 'greeting')
+        provider_type: Type of provider to get ('llm', 'summarizer', 'query', 'error', 'ui', 'reranker', 'greeting', 'contextual_chunking')
         
     Returns:
         BasePromptProvider: The requested provider instance
@@ -187,18 +194,23 @@ def get_provider(provider_type: str) -> BasePromptProvider:
     Raises:
         ValueError: If an invalid provider type is specified
     """
-    providers = {
-        'llm': LLMPromptProvider,
-        'summarizer': SummarizerPromptProvider,
-        'query': QueryAnalysisPromptProvider,
-        'error': ErrorPromptProvider,
-        'ui': UIPromptProvider,
-        'reranker': RerankerPromptProvider,
-        'greeting': GreetingPromptProvider,
-        'evaluator': EvaluatorPromptProvider
-    }
-    
-    if provider_type not in providers:
-        raise ValueError(f"Invalid provider type: {provider_type}")
-        
-    return providers[provider_type]() 
+    if provider_type == 'llm':
+        return LLMPromptProvider()
+    elif provider_type == 'summarizer':
+        return SummarizerPromptProvider()
+    elif provider_type == 'query':
+        return QueryAnalysisPromptProvider()
+    elif provider_type == 'error':
+        return ErrorPromptProvider()
+    elif provider_type == 'ui':
+        return UIPromptProvider()
+    elif provider_type == 'reranker':
+        return RerankerPromptProvider()
+    elif provider_type == 'greeting':
+        return GreetingPromptProvider()
+    elif provider_type == 'evaluator':
+        return EvaluatorPromptProvider()
+    elif provider_type == 'contextual_chunking':
+        return ContextualChunkingPromptProvider()
+    else:
+        raise ValueError(f"Unknown provider type: {provider_type}")

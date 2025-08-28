@@ -87,6 +87,7 @@ class ChunkingStrategyType(Enum):
     SLIDING_WINDOW = "Sliding Window"
     HIERARCHICAL = "Hierarchical"
     SEMANTIC = "Semantic"
+    CONTEXTUAL = "Contextual"
     
     @classmethod
     def list(cls) -> List[str]:

@@ -648,6 +648,16 @@ def display_settings_panel():
     _handle_mode_selection()
     st.sidebar.markdown("")
 
+    # --- Contextual RAG Mode Button ---
+    if st.sidebar.button("✨ Contextual RAG Mode", help="Switch to contextual chunking, hybrid retrieval, Cohere embedding, Voyage reranker, Claude 4 LLM"):
+        st.session_state.chunking_strategy = "Contextual"
+        st.session_state.embedding_model = DEFAULT_EMBEDDING_MODEL.value
+        st.session_state.vector_store = "Hybrid"
+        st.session_state.reranker = DEFAULT_RERANKER_MODEL.value
+        st.session_state.llm_model = DEFAULT_LLM_MODEL.value
+        st.session_state.config_changed = True
+        st.sidebar.success("Contextual RAG configuration applied! Click 'Initialize JEFF' to activate.")
+
     st.sidebar.header("📚 Load Textbook")
     _handle_file_upload()
     st.sidebar.markdown("---")

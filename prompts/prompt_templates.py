@@ -540,3 +540,15 @@ GREETING_DETECTION_TEMPLATE = """Analyze if this is a greeting or small talk and
 - Nice weather today, Lovely day isn't it?
 - Hi James, Hi Anna
 """
+
+CONTEXTUAL_CHUNKING_PROMPT = """
+<document>
+{WHOLE_DOCUMENT}
+</document>
+
+Here is the chunk we want to situate within the whole document
+<chunk>
+{CHUNK_CONTENT}
+</chunk>
+
+Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else."""

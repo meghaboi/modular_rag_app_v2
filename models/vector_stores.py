@@ -287,13 +287,14 @@ class HybridVectorStore(VectorStore):
             log.error("HybridSearch component not found. Please check pipeline components.")
             raise
 
-        self.hybrid_search = HybridSearch(alpha=alpha)
+        #self.hybrid_search = HybridSearch(documents, embeddings)
         self.documents: List[str] = []
+        self.alpha = alpha
 
     def add_documents(self, documents: List[str], embeddings: List[List[float]]) -> None:
         """Add documents and their embeddings to the store."""
         self.documents = documents
-        self.hybrid_search.add_documents(documents, embeddings)
+        self.hybrid_search = HybridSearch(documents, embeddings, alpha=self.alpha)
 
     def search(self, query_embedding: List[float], top_k: int = 5, **kwargs) -> List[Tuple[str, float]]:
         """Search for similar documents using hybrid search."""
