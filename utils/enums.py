@@ -48,6 +48,7 @@ class LLMModelType(Enum):
     OPENAI_GPT35 = "OpenAI GPT-3.5"
     OPENAI_GPT4 = "OpenAI GPT-4"
     GEMINI = "Gemini"
+    CLAUDE_3_5_HAIKU = "Claude-3.5-Haiku"
     CLAUDE_4_OPUS = "Claude-4-Opus"
     CLAUDE_4_SONNET = "Claude-4-Sonnet"
     MISTRAL_LARGE = "Mistral-Large"

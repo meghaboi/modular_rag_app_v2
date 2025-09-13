@@ -39,6 +39,7 @@ class PipelineConfig:
     vector_store_type: VectorStoreType
     reranker_type: RerankerModelType
     llm_type: LLMModelType
+    contextualLlm_type: LLMModelType
     chunking_strategy_type: ChunkingStrategyType
     hybrid_alpha: float = field(default=DEFAULT_HYBRID_ALPHA)
     chunk_size: int = field(default=DEFAULT_CHUNK_SIZE)
@@ -74,7 +75,8 @@ class PipelineConfig:
             vector_store_type=VectorStoreType.CHROMA,
             reranker_type=RerankerModelType.NONE,
             llm_type=LLMModelType.CLAUDE_3_SONNET,
-            chunking_strategy_type=ChunkingStrategyType.PARAGRAPH
+            chunking_strategy_type=ChunkingStrategyType.PARAGRAPH,
+            contextualLlm_type=LLMModelType.CLAUDE_3_SONNET
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -135,4 +137,4 @@ class PipelineConfig:
             chunk_overlap=self.chunk_overlap,
             top_k=self.top_k,
             evaluation_mode=self.evaluation_mode
-        ) 
+        )

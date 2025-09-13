@@ -78,18 +78,17 @@ class ChunkingStrategy(ABC):
                 break
         return overlap_units
 
-
 class ContextualChunking(ChunkingStrategy):
     """Contextual chunking: adds succinct context to each chunk using Claude Haiku and the whole document."""
-    def __init__(self, base_chunker=None):
+    def __init__(self, base_chunker=None, llm_model=ClaudeLLM(model_name="claude-3-5-haiku-20241022")):
         super().__init__()
         self.base_chunker = base_chunker or SlidingWindowChunking()
-        self.llm = ClaudeLLM(model_name="claude-3-5-haiku-20241022")
+        self.llm = llm_model
         self.prompt_provider = get_provider('contextual_chunking')
 
-    def chunk_text(self, text: str, chunk_size: int = 1000, chunk_overlap: int = 200):
+    def chunk_text(self, text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
         chunks = self.base_chunker.chunk_text(text, chunk_size, chunk_overlap)
-        results = []
+        results: List[str] = []
         for chunk in chunks:
             prompt = self.prompt_provider.get_prompt(
                 'contextual_chunking',
@@ -100,7 +99,9 @@ class ContextualChunking(ChunkingStrategy):
                 context, _ = self.llm.generate(prompt)
             except Exception as e:
                 context = f"[Context generation failed: {e}]"
-            results.append({'chunk': chunk, 'context': context})
+            # Combine context and chunk as a single string to keep downstream expectations (List[str])
+            combined = f"[CONTEXT]\n{context}\n\n[CHUNK]\n{chunk}"
+            results.append(combined)
         return results
 
     @property
@@ -110,7 +111,6 @@ class ContextualChunking(ChunkingStrategy):
     @property
     def description(self) -> str:
         return "Adds succinct context to each chunk using Claude Haiku and the whole document."
-
 
 class ParagraphChunking(ChunkingStrategy):
     """Paragraph-based chunking strategy that respects paragraph boundaries."""
@@ -203,8 +203,7 @@ class HierarchicalChunking(ChunkingStrategy):
         return (
             f"Creates a {self.levels}-level hierarchy of chunks with different sizes. "
             f"Combines small chunks for local context with larger chunks for broader context. "
-            f"Best for complex documents with nested structure."
-        )
+            f"Best for complex documents with nested structure.")
 
 
 class SemanticChunking(ChunkingStrategy):

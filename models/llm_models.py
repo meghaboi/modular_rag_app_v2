@@ -5,7 +5,7 @@ import logging
 from openai import OpenAI 
 import google.generativeai as genai 
 from anthropic import Anthropic 
-from mistralai.client import MistralClient 
+from mistralai import Mistral 
 from mistralai.models import UserMessage, SystemMessage
 
 from utils.enums import LLMModelType
@@ -425,7 +425,7 @@ class MistralLLM(StreamingLLM):
         if not api_key:
             raise ValueError("Mistral API key not found in environment variables")
         
-        self._client = MistralClient(api_key=api_key)
+        self._client = Mistral(api_key=api_key)
         self._model_name = model_name
 
     def get_model_name(self) -> str:
@@ -450,7 +450,7 @@ class MistralLLM(StreamingLLM):
         messages.append(UserMessage(content=user_content))
         
         try:
-            chat_response = self._client.chat(
+            chat_response = self._client.chat.complete(
                 model=self._model_name,
                 messages=messages,
             )
@@ -483,12 +483,12 @@ class MistralLLM(StreamingLLM):
         messages.append(UserMessage(content=user_content))
         
         try:
-            for chunk in self._client.chat_stream(
+            for chunk in self._client.chat.stream(
                 model=self._model_name,
                 messages=messages,
             ):
-                if chunk.choices[0].delta.content is not None:
-                    yield chunk.choices[0].delta.content
+                if chunk.data.choices[0].delta.content is not None:
+                    yield chunk.data.choices[0].delta.content
         except Exception as e:
             logger.error(f"Error during Mistral streaming API call: {e}")  # Changed from print to logger
             yield "Error: Could not stream response from model."
@@ -505,6 +505,8 @@ class LLMFactory:
             return OpenAIGPT(model_name="gpt-4")
         elif model_type == LLMModelType.GEMINI:
             return GeminiLLM()
+        elif model_type == LLMModelType.CLAUDE_3_5_HAIKU:
+            return ClaudeLLM(model_name="claude-3-5-haiku-20241022")
         elif model_type == LLMModelType.CLAUDE_4_OPUS:
             return ClaudeLLM(model_name="claude-opus-4-20250514")
         elif model_type == LLMModelType.CLAUDE_4_SONNET:

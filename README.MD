@@ -1,49 +1,143 @@
 # Modular RAG Application
 
-A modular and extensible Retrieval-Augmented Generation (RAG) application that allows for flexible configuration and evaluation of different RAG components.
+A powerful and flexible Retrieval-Augmented Generation (RAG) system that combines the knowledge retrieval capabilities of search systems with the language understanding and generation abilities of large language models (LLMs).
 
-## Project Structure
+## Core Concepts
 
-### Main Application (`app.py`)
-The main entry point of the application that:
-- Initializes the Streamlit web interface
-- Sets up session state variables for configuration
-- Manages the application's main flow between chat and evaluation modes
-- Handles environment variables and logging configuration
+### What is RAG?
+Retrieval-Augmented Generation (RAG) enhances large language models by:
+1. **Retrieving** relevant information from a knowledge base
+2. **Augmenting** the model's context with this information
+3. **Generating** responses that are grounded in the retrieved knowledge
+
+### Why Use This Implementation?
+- **Modular Design**: Swap components (models, retrievers, etc.) without changing core logic
+- **Multi-Model Support**: Use various LLMs (OpenAI, Claude, Gemini, Mistral) with consistent interfaces
+- **Configurable Pipeline**: Tune each component to optimize performance
+- **Evaluation Framework**: Built-in tools to measure and improve system performance
+
+## System Architecture
+
+The application is structured into several key components that work together seamlessly:
+
+### 1. User Interface Layer
+- **Web Interface**: Interactive Streamlit-based UI for user interaction
+- **Chat Interface**: Natural language input and response display
+- **Configuration Panel**: Control panel for adjusting system settings
+- **Evaluation Dashboard**: Monitor and analyze system performance
 
 ### UI Components (`ui/`)
 - `sidebar.py`: Implements the settings panel with configuration options for all RAG components
 - `ui_components.py`: Contains the main chat and evaluation interface components
 - `components/`: Additional UI components for specific features
 
-### Models (`models/`)
-- `llm_models.py`: Implements various Large Language Model interfaces and configurations
-- `rerankers.py`: Contains different reranking strategies for improving retrieval quality
-- `embedding_models.py`: Implements various embedding models for text vectorization
-- `vector_stores.py`: Manages different vector store implementations for document storage
-- `evaluator.py`: Comprehensive evaluation framework for RAG pipeline components
-- `chunking_strategies.py`: Implements different text chunking strategies for document processing
+### 2. Core Components
 
-### Pipeline (`pipeline/`)
-- `rag_pipeline.py`: Core RAG pipeline implementation
-- `pipeline_manager.py`: Manages pipeline configuration and execution
-- `summarizer_module.py`: Handles document summarization functionality
-- `nature_handling.py`: Manages document nature and type-specific processing
-- `components/`: Individual pipeline components
-- `utils/`: Pipeline-specific utility functions
-- `models/`: Pipeline-specific model implementations
+#### Language Models
+- Multiple LLM providers (OpenAI, Claude, Gemini, Mistral)
+- Unified interface for different models
+- Streaming support for real-time responses
+- Token usage tracking and cost calculation
 
-### Utils (`utils/`)
-- `enums.py`: Contains enumerations for configuration options
-- `subject_configs.py`: Default configurations for different components
-- `token_utils.py`: Token counting and management utilities
-- `api_management/`: API key and service management
-- `file_handling/`: Document processing and file management
-- `analysis/`: Analysis tools for RAG performance
-- `text_processing/`: Text processing utilities
+#### Document Processing
+- **Chunking**: Breaks down documents into manageable pieces
+- **Embedding**: Converts text into numerical vectors for semantic search
+- **Vector Storage**: Efficiently stores and retrieves document vectors
+- **Reranking**: Improves result quality by reordering retrieved documents
 
-### Prompts (`prompts/`)
-Contains prompt templates and configurations for different LLM interactions
+#### Knowledge Base
+- Document ingestion and processing
+- Vector database integration
+- Semantic search capabilities
+- Dynamic document updates
+
+### 3. Processing Pipeline
+
+#### Document Ingestion
+1. **Document Loading**: Supports multiple file formats (PDF, DOCX, TXT, etc.)
+2. **Preprocessing**: Cleans and normalizes text
+3. **Chunking**: Splits documents into meaningful segments
+4. **Embedding**: Converts text chunks into vector representations
+
+#### Query Processing
+1. **Query Understanding**: Analyzes and processes user questions
+2. **Retrieval**: Finds relevant document chunks
+3. **Reranking**: Orders results by relevance
+4. **Context Formation**: Prepares information for the LLM
+5. **Response Generation**: Creates coherent, informed answers
+
+### 4. Support Systems
+
+#### Configuration Management
+- Component-specific settings
+- Model configurations
+- System parameters
+
+#### Performance Monitoring
+- Response time tracking
+- Token usage and cost analysis
+- Quality metrics
+
+#### Utilities
+- Text processing
+- File handling
+- API management
+- Error handling
+
+### 5. Prompt Engineering
+
+#### Template System
+- Dynamic prompt construction
+- Context-aware templates
+- Model-specific optimizations
+
+#### Prompt Management
+- Version control for prompts
+- A/B testing framework
+- Performance tracking
+
+## How It All Works Together
+
+1. **User Interaction**
+   - User submits a query through the web interface
+   - System processes and understands the intent
+
+2. **Knowledge Retrieval**
+   - Converts query to vector representation
+   - Searches vector database for relevant information
+   - Reranks results for maximum relevance
+
+3. **Response Generation**
+   - Combines query and retrieved context
+   - Generates informed response using selected LLM
+   - Streams response back to user in real-time
+
+4. **Learning & Improvement**
+   - Tracks interaction metrics
+   - Updates knowledge base as needed
+   - Adapts to improve future responses
+
+## Getting Started
+
+1. Install dependencies: `pip install -r requirements.txt`
+2. Set up your API keys in the configuration
+3. Launch the application: `streamlit run app.py`
+4. Start chatting or evaluating through the web interface
+
+## Configuration
+
+The system is highly configurable through:
+- Environment variables
+- Configuration files
+- UI settings panel
+
+## Contributing
+
+We welcome contributions! Please see our contribution guidelines for more details.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Detailed Component Documentation
 

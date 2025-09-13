@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Dict, Any, Optional
 import numpy as np
+from pipeline.components.hybrid_search import HybridSearch
 from utils.enums import VectorStoreType
 import logging
 import uuid
@@ -34,7 +35,7 @@ class FAISSVectorStore(VectorStore):
             raise
 
         self._documents: List[str] = []
-        self._index: Optional[self.faiss.Index] = None
+        self._index: Optional[FAISSVectorStore.faiss.Index] = None
         self._dimension: Optional[int] = None
 
     def add_documents(self, documents: List[str], embeddings: List[List[float]]) -> None:
