@@ -1,13 +1,13 @@
 from enum import Enum, auto
 from typing import Dict, Any, List, Optional, Type
 
-# Enum for Embedding Models
 class EmbeddingModelType(Enum):
     OPENAI = "OpenAI"
     COHERE = "Cohere"
     GEMINI = "Gemini"
     MISTRAL = "Mistral"
     VOYAGE = "Voyage"  
+    QWEN = "Qwen"
     
     @classmethod
     def list(cls) -> List[str]:
@@ -22,16 +22,16 @@ class EmbeddingModelType(Enum):
                 return e
         raise ValueError(f"Unknown embedding model: {value}")
 
-# Enum for Reranker Models
 class RerankerModelType(Enum):
     NONE = "None"
     COHERE_V2 = "Cohere-V2"
     COHERE_V3 = "Cohere-V3"
     COHERE_MULTILINGUAL = "Cohere-Multilingual"
-    VOYAGE = "Voyage"
     VOYAGE_2 = "Voyage-2"
+    VOYAGE_1 = "Voyage-1"
     JINA = "Jina"
     JINA_V2 = "Jina-v2"
+    LLM = "LLM"
     
     @classmethod
     def list(cls) -> List[str]:
@@ -44,13 +44,13 @@ class RerankerModelType(Enum):
                 return e
         raise ValueError(f"Unknown reranker model: {value}")
 
-# Enum for LLM Models
 class LLMModelType(Enum):
     OPENAI_GPT35 = "OpenAI GPT-3.5"
     OPENAI_GPT4 = "OpenAI GPT-4"
     GEMINI = "Gemini"
-    CLAUDE_3_OPUS = "Claude-3-Opus"
-    CLAUDE_37_SONNET = "Claude-3.7-Sonnet"
+    CLAUDE_3_5_HAIKU = "Claude-3.5-Haiku"
+    CLAUDE_4_OPUS = "Claude-4-Opus"
+    CLAUDE_4_SONNET = "Claude-4-Sonnet"
     MISTRAL_LARGE = "Mistral-Large"
     MISTRAL_MEDIUM = "Mistral-Medium"
     MISTRAL_SMALL = "Mistral-Small"
@@ -66,12 +66,11 @@ class LLMModelType(Enum):
                 return e
         raise ValueError(f"Unknown LLM model: {value}")
 
-# Enum for Vector Stores
 class VectorStoreType(Enum):
     FAISS = "FAISS"
     CHROMA = "Chroma"
     MILVUS = "Milvus"
-    HYBRID = "Hybrid"  # New hybrid option
+    HYBRID = "Hybrid"
     
     @classmethod
     def list(cls) -> List[str]:
@@ -84,12 +83,12 @@ class VectorStoreType(Enum):
                 return e
         raise ValueError(f"Unknown vector store: {value}")
 
-# Enum for Chunking Strategies
 class ChunkingStrategyType(Enum):
     PARAGRAPH = "Paragraph-based"
     SLIDING_WINDOW = "Sliding Window"
     HIERARCHICAL = "Hierarchical"
     SEMANTIC = "Semantic"
+    CONTEXTUAL = "Contextual"
     
     @classmethod
     def list(cls) -> List[str]:
@@ -102,7 +101,6 @@ class ChunkingStrategyType(Enum):
                 return e
         raise ValueError(f"Unknown chunking strategy: {value}")
 
-# Enum for Evaluation Methods
 class EvaluationMethodType(Enum):
     BUILTIN = "Built-in Evaluator"
     LANGSMITH = "LangSmith Evaluator"
@@ -123,7 +121,9 @@ class EvaluationBackendType(Enum):
     BUILTIN = "Built-in Evaluator"
     RAGAS = "RAGAS"
     LANGSMITH = "LangSmith"
-    DEEP = "Deep"
+    DEEP_EVAL = "DeepEval"
+    RAGAS_V2 = "RAGAS_V2"
+    CUSTOM = "Custom"
 
     @classmethod
     def list(cls):
@@ -138,7 +138,6 @@ class EvaluationBackendType(Enum):
                 return e
         raise ValueError(f"No enum value matches: {value}")
 
-# Enum for Evaluation Metrics
 class EvaluationMetricType(Enum):
     """Enum for evaluation metric types"""
     ANSWER_RELEVANCE = "answer_relevance"
@@ -149,7 +148,9 @@ class EvaluationMetricType(Enum):
     CONTEXT_RECALL = "context_recall"        # RAGAS specific
     ANSWER_CONSISTENCY = "answer_consistency"  # Custom metric
     CONTEXT_COVERAGE = "context_coverage"    # Custom metric
-    CORRECTNESS = "answer_correctness"       # Adding RAGAS correctness metric
+    ANSWER_CORRECTNESS = "answer_correctness"
+    F1_SCORE = "f1_score"                   # Harmonic mean of context recall and relevance
+    COST = "cost"                           # LLM cost metric
     
     @classmethod
     def list(cls):
@@ -179,9 +180,9 @@ class EvaluationMetricType(Enum):
                 cls.CONTEXT_PRECISION.value,
                 cls.CONTEXT_RECALL.value,
                 cls.FAITHFULNESS.value,
-                cls.CORRECTNESS.value  # Add correctness here
+                cls.ANSWER_CORRECTNESS.value  # Add correctness here
             ]
-        elif backend_type == EvaluationBackendType.DEEP:
+        elif backend_type == EvaluationBackendType.DEEP_EVAL:
             return [
                 cls.ANSWER_RELEVANCE.value,
                 cls.CONTEXT_RELEVANCE.value,
@@ -189,6 +190,21 @@ class EvaluationMetricType(Enum):
                 cls.FAITHFULNESS.value,
                 cls.ANSWER_CONSISTENCY.value,
                 cls.CONTEXT_COVERAGE.value
+            ]
+        elif backend_type == EvaluationBackendType.RAGAS_V2:
+            return [
+                cls.FAITHFULNESS.value,
+                cls.CONTEXT_PRECISION.value,
+                cls.CONTEXT_RECALL.value,
+                cls.ANSWER_CORRECTNESS.value,
+            ]
+        elif backend_type == EvaluationBackendType.CUSTOM:
+            return [
+                cls.CONTEXT_RECALL.value,
+                cls.CONTEXT_PRECISION.value,
+                cls.ANSWER_RELEVANCE.value,
+                cls.FAITHFULNESS.value,
+                cls.ANSWER_CORRECTNESS.value
             ]
         else:
             return []
