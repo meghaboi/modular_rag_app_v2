@@ -685,7 +685,7 @@ def display_settings_panel():
 def _render_header():
     """Render sidebar header."""
     st.sidebar.image(SIDEBAR_IMAGE_URL, width=SIDEBAR_IMAGE_WIDTH)
-    st.sidebar.title("Ask-JEFF")
+    st.sidebar.title("Law.ai")
 
 def _handle_subject_selection():
     """Handle subject selection."""
