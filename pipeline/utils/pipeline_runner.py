@@ -11,7 +11,7 @@ class PipelineRunner:
     """Manages the execution and evaluation of a RAG pipeline."""
 
     @classmethod
-    def run_pipeline_with_config(cls, user_query: str, ground_truth: str = None, embedding_model_enum=None, vector_store_enum=None, reranker_enum=None, llm_enum=None,chunking_strategy_enum=None, **kwargs):
+    def run_pipeline_with_config(cls, user_query: str, ground_truth: str = None, embedding_model_enum=None, vector_store_enum=None, reranker_enum=None, llm_enum=None, chunking_strategy_enum=None, **kwargs):
         """
         Convenience method to build PipelineConfig from enums/params and run the pipeline.
         Accepts model enums and any additional pipeline params.
@@ -19,12 +19,18 @@ class PipelineRunner:
         # Import here to avoid circular imports
         from pipeline.components.config import PipelineConfig
         config = PipelineConfig(
-            embedding_model=embedding_model_enum,
-            vector_store=vector_store_enum,
-            reranker=reranker_enum,
-            llm=llm_enum,
-            chunking_strategy=chunking_strategy_enum,
-            **kwargs
+            file_path=kwargs.get('file_path'),
+            embedding_model_type=embedding_model_enum,
+            vector_store_type=vector_store_enum,
+            reranker_type=reranker_enum,
+            llm_type=llm_enum,
+            chunking_strategy_type=chunking_strategy_enum,
+            hybrid_alpha=kwargs.get('hybrid_alpha', PipelineConfig.DEFAULT_HYBRID_ALPHA),
+            chunk_size=kwargs.get('chunk_size', PipelineConfig.DEFAULT_CHUNK_SIZE),
+            chunk_overlap=kwargs.get('chunk_overlap', PipelineConfig.DEFAULT_CHUNK_OVERLAP),
+            top_k=kwargs.get('top_k', PipelineConfig.DEFAULT_TOP_K),
+            evaluation_mode=kwargs.get('evaluation_mode', PipelineConfig.DEFAULT_EVALUATION_MODE),
+            precomputed_chunks=kwargs.get('precomputed_chunks')
         )
         runner = cls(config, user_query, ground_truth)
         return runner.run()

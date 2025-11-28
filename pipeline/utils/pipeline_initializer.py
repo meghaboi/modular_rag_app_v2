@@ -11,6 +11,7 @@ from models.rerankers import RerankerFactory
 from models.llm_models import LLMFactory
 from models.chunking_strategies import ChunkingStrategyFactory
 from pipeline.rag_pipeline import RAGPipeline
+from utils.enums import RerankerModelType
 
 class PipelineInitializer:
     """Handles the creation and initialization of a RAG pipeline."""
@@ -55,9 +56,12 @@ class PipelineInitializer:
             self.config.vector_store_type, alpha=self.config.hybrid_alpha
         )
         llm = LLMFactory.create_llm(self.config.llm_type)
-        reranker = RerankerFactory.create_reranker(
-            self.config.reranker_type, llm_client=llm
-        )
+
+        reranker = None
+        if self.config.reranker_type != RerankerModelType.NONE:
+            reranker = RerankerFactory.create_reranker(
+                self.config.reranker_type, llm_client=llm
+            )
         chunking_strategy = ChunkingStrategyFactory.get_strategy(
             self.config.chunking_strategy_type.value
         )
@@ -69,6 +73,7 @@ class PipelineInitializer:
             "llm": llm,
             "top_k": self.config.top_k,
             "chunking_strategy": chunking_strategy,
+            "precomputed_chunks": getattr(self.config, 'precomputed_chunks', None),
         }
 
     def _index_documents(self, pipeline: RAGPipeline):

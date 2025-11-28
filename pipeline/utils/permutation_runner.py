@@ -4,7 +4,7 @@ import itertools
 import pandas as pd
 import csv
 import streamlit as st
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from dataclasses import dataclass, field
 
 from utils.enums import (
@@ -40,7 +40,7 @@ class PermutationConfig:
         [r for r in RerankerModelType if r != RerankerModelType.NONE] + [RerankerModelType.NONE]
     )
     llm_models: List[LLMModelType] = field(default_factory=lambda: [
-        LLMModelType.CLAUDE_3_SONNET, LLMModelType.GEMINI
+        LLMModelType.CLAUDE_4_SONNET, LLMModelType.GEMINI
     ])
     chunking_strategies: List[ChunkingStrategyType] = field(default_factory=lambda: [
         ChunkingStrategyType.PARAGRAPH
@@ -55,22 +55,85 @@ class PermutationConfig:
 
 class PermutationRunner:
     """Runs a pipeline with all permutations of configured models."""
+    @classmethod
+    def run_all_permutations(
+        cls,
+        file_path: str,
+        user_query: str,
+        ground_truth: str,
+        chunk_size: int,
+        chunk_overlap: int,
+        top_k: int,
+        hybrid_alpha: float,
+        chunking_strategy_enum: ChunkingStrategyType,
+        output_csv_file: str = "permutation_results.csv",
+        perm_config: Optional[PermutationConfig] = None,
+        use_contextual_once: bool = False,
+    ) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
+        """Convenience wrapper to match existing UI calls (classmethod-style)."""
+        runner = cls(
+            file_path=file_path,
+            user_query=user_query,
+            ground_truth=ground_truth,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            top_k=top_k,
+            hybrid_alpha=hybrid_alpha,
+            chunking_strategy=chunking_strategy_enum,
+            output_csv_file=output_csv_file,
+            perm_config=perm_config,
+            use_contextual_once=use_contextual_once,
+        )
+        return runner._run_all_permutations_internal()
     def __init__(self, file_path: str, user_query: str, ground_truth: str, 
                  chunk_size: int, chunk_overlap: int, top_k: int, hybrid_alpha: float,
                  chunking_strategy: ChunkingStrategyType, 
                  output_csv_file: str = "permutation_results.csv",
-                 perm_config: PermutationConfig = None):
+                 perm_config: PermutationConfig = None,
+                 use_contextual_once: bool = False):
         
         self.pipeline_params = {
             "file_path": file_path, "user_query": user_query, "ground_truth": ground_truth,
             "chunk_size": chunk_size, "chunk_overlap": chunk_overlap, "top_k": top_k,
-            "hybrid_alpha": hybrid_alpha, "chunking_strategy_enum": chunking_strategy
+            "hybrid_alpha": hybrid_alpha
         }
         self.output_csv_file = output_csv_file
         self.perm_config = perm_config or PermutationConfig()
         self.all_results = []
+        self.use_contextual_once = use_contextual_once
+        self.selected_chunking_strategy = chunking_strategy
 
-    def run_all_permutations(self) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
+        # If contextual reuse is requested and the selected strategy is Contextual,
+        # precompute chunks once and pass them through.
+        self._maybe_prepare_contextual_chunks()
+
+    def _maybe_prepare_contextual_chunks(self) -> None:
+        """Precompute contextual chunks once if requested."""
+        try:
+            if not self.use_contextual_once:
+                return
+            if self.selected_chunking_strategy != ChunkingStrategyType.CONTEXTUAL:
+                return
+            import io
+            from models.chunking_strategies import ContextualChunking
+            # Read file
+            file_path: str = self.pipeline_params.get("file_path")
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            # Build contextual chunker and compute chunks once
+            chunker = ContextualChunking()
+            chunks = chunker.chunk_text(
+                text,
+                chunk_size=self.pipeline_params.get("chunk_size", 1000),
+                chunk_overlap=self.pipeline_params.get("chunk_overlap", 200)
+            )
+            # Attach to params so every permutation reuses them
+            self.pipeline_params["precomputed_chunks"] = chunks
+            logging.info(f"Prepared contextual chunks once: {len(chunks)} chunks")
+        except Exception as e:
+            logging.warning(f"Failed to precompute contextual chunks; falling back to per-permutation chunking. Error: {e}")
+
+    def _run_all_permutations_internal(self) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
         """Run all configured permutations and return the results."""
         permutations = self.perm_config.get_permutations()
         num_perms = len(permutations)
@@ -117,7 +180,7 @@ class PermutationRunner:
         return {
             "embedding_model": combo.embedding_model.value, "vector_store": combo.vector_store.value,
             "reranker": combo.reranker.value, "llm_model": combo.llm.value,
-            "chunking_strategy": self.pipeline_params["chunking_strategy_enum"].value,
+            "chunking_strategy": self.selected_chunking_strategy.value,
             "response": "SKIPPED - Missing API Keys", "avg_custom_score": 0, "elapsed_time": 0, "contexts": [],
             **{f"custom_{m.value.lower().replace(' ', '_')}": "N/A" for m in EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.CUSTOM)},
             **{f"ragas_{m.value.lower().replace(' ', '_')}": "N/A" for m in EvaluationMetricType.get_metrics_for_backend(EvaluationBackendType.RAGAS_V2)}
@@ -135,7 +198,7 @@ class PermutationRunner:
         flat_result = self._flatten_result(result)
         row_to_write = {field: flat_result.get(field, "N/A") for field in writer.fieldnames}
         writer.writerow(row_to_write)
-        writer.f.flush()
+        # Flushing is handled by the file context manager in run_all_permutations
 
     def _flatten_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Flatten a nested result dictionary for CSV writing."""

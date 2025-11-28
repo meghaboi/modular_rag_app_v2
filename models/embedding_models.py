@@ -4,6 +4,9 @@ import time
 import random
 import logging
 from abc import ABC, abstractmethod
+
+ 
+
 from utils.enums import EmbeddingModelType
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -244,7 +247,6 @@ class VoyageEmbedding(EmbeddingModel):
     def dimension(self) -> int:
         return self.MODEL_DIMENSIONS.get(self._model_name, 1024)
 
-
 class QwenEmbedding(EmbeddingModel):
     """Qwen3 Embedding model implementation using Hugging Face transformers."""
     MODEL_NAME = "Qwen/Qwen3-Embedding-8B"
@@ -252,14 +254,16 @@ class QwenEmbedding(EmbeddingModel):
 
     def __init__(self):
         import torch
-        import torch.nn.functional as F
         from transformers import AutoTokenizer, AutoModel
+
         self._tokenizer = AutoTokenizer.from_pretrained(self.MODEL_NAME, padding_side='left')
         self._model = AutoModel.from_pretrained(self.MODEL_NAME)
         self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self._model.to(self._device)
 
     def _last_token_pool(self, last_hidden_states, attention_mask):
+        import torch
+
         left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
         if left_padding:
             return last_hidden_states[:, -1]
@@ -269,6 +273,9 @@ class QwenEmbedding(EmbeddingModel):
             return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
 
     def embed_query(self, query: str) -> List[float]:
+        import torch
+        import torch.nn.functional as F
+
         batch_dict = self._tokenizer([query], padding=True, truncation=True, max_length=8192, return_tensors="pt")
         batch_dict = {k: v.to(self._device) for k, v in batch_dict.items()}
         with torch.no_grad():
@@ -278,6 +285,9 @@ class QwenEmbedding(EmbeddingModel):
         return embeddings[0].cpu().tolist()
 
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
+        import torch
+        import torch.nn.functional as F
+
         batch_dict = self._tokenizer(documents, padding=True, truncation=True, max_length=8192, return_tensors="pt")
         batch_dict = {k: v.to(self._device) for k, v in batch_dict.items()}
         with torch.no_grad():
@@ -290,6 +300,51 @@ class QwenEmbedding(EmbeddingModel):
     def dimension(self) -> int:
         return self.DIMENSION
 
+class LinqEmbedding(EmbeddingModel):
+    """Linq embedding model using SentenceTransformers.
+
+    Model card: Linq-AI-Research/Linq-Embed-Mistral
+    """
+    MODEL_NAME = "Linq-AI-Research/Linq-Embed-Mistral"
+
+    def __init__(self, device: str = None, batch_size: int = 32):
+        from sentence_transformers import SentenceTransformer
+        # Auto-select device if not provided
+        try:
+            import torch as _torch
+            auto_device = 'cuda' if _torch.cuda.is_available() else 'cpu'
+        except Exception:
+            auto_device = 'cpu'
+
+        self._device = device or auto_device
+        self._batch_size = batch_size
+        self._model = SentenceTransformer(self.MODEL_NAME, device=self._device)
+        # Determine dimension from the model if available
+        try:
+            self._dimension = int(self._model.get_sentence_embedding_dimension())
+        except Exception:
+            # Fallback: compute from a dummy encode
+            dummy = self._model.encode(["test"], batch_size=1)
+            self._dimension = int(len(dummy[0]))
+
+    def embed_query(self, query: str) -> List[float]:
+        emb = self._model.encode(query, batch_size=1, convert_to_numpy=True, normalize_embeddings=True)
+        return emb.tolist()
+
+    def embed_documents(self, documents: List[str]) -> List[List[float]]:
+        embs = self._model.encode(
+            documents,
+            batch_size=self._batch_size,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
+        return embs.tolist()
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
 class EmbeddingModelFactory:
     """Factory for creating embedding models."""
     _model_map: Dict[EmbeddingModelType, Type[EmbeddingModel]] = {
@@ -298,7 +353,8 @@ class EmbeddingModelFactory:
         EmbeddingModelType.GEMINI: GeminiEmbedding,
         EmbeddingModelType.MISTRAL: MistralEmbedding,
         EmbeddingModelType.VOYAGE: VoyageEmbedding,
-        EmbeddingModelType.QWEN: QwenEmbedding
+        EmbeddingModelType.QWEN: QwenEmbedding,
+        EmbeddingModelType.LINQ: LinqEmbedding,
     }
 
     @classmethod

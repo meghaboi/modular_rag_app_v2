@@ -296,7 +296,7 @@ class ConfigurationManager:
         else:
             st.sidebar.header("⚙️ Current Setup")
             st.sidebar.info("JEFF uses this setup. Switch to Evaluation Mode to change.")
-            ConfigurationManager._render_readonly_config()
+            ConfigurationManager._render_editable_config()
 
     @staticmethod
     def _render_editable_config():

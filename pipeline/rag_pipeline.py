@@ -29,6 +29,7 @@ class PipelineConfiguration:
     chunk_size: int = DEFAULT_CHUNK_SIZE
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
     evaluation_mode: bool = False
+    precomputed_chunks: Optional[List[str]] = None
 
 class TimingLogger:
     """Utility class for consistent timing and logging."""
@@ -51,7 +52,20 @@ class DocumentIndexer:
         total_start_time = time.time()
 
         text = self._read_file(file_path)
-        chunks = self._chunk_document(text, chunk_size, chunk_overlap)
+        # If precomputed chunks are provided in config, use them once for all permutations
+        if getattr(self._config, 'precomputed_chunks', None):
+            chunks = self._config.precomputed_chunks
+            logging.info(f"Using precomputed chunks: {len(chunks)} chunks provided.")
+        else:
+            chunks = self._chunk_document(text, chunk_size, chunk_overlap)
+        # Filter out empty or whitespace-only chunks to satisfy embedding API requirements
+        before_count = len(chunks)
+        chunks = [c.strip() for c in chunks if isinstance(c, str) and c and c.strip()]
+        removed = before_count - len(chunks)
+        if removed:
+            logging.info(f"Filtered out {removed} empty/whitespace-only chunks before embedding.")
+        if not chunks:
+            raise RAGPipelineExecutionError("No valid chunks to embed after filtering.")
         embeddings = self._generate_embeddings(chunks)
         self._store_embeddings(chunks, embeddings)
 
@@ -201,7 +215,8 @@ class RAGPipeline:
     def __init__(self, embedding_model, vector_store,
                  llm, reranker=None, top_k=3,
                  chunking_strategy=None, chunk_size=1000,
-                 chunk_overlap=200, evaluation_mode=False):
+                 chunk_overlap=200, evaluation_mode=False,
+                 precomputed_chunks: Optional[List[str]] = None):
         """
         Initialize the RAG pipeline with the selected components.
 
@@ -229,7 +244,8 @@ class RAGPipeline:
                 chunking_strategy=chunking_strategy,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
-                evaluation_mode=evaluation_mode
+                evaluation_mode=evaluation_mode,
+                precomputed_chunks=precomputed_chunks
             )
 
             # Maintain backward compatibility with direct property access
@@ -243,6 +259,7 @@ class RAGPipeline:
             self.chunk_size = chunk_size
             self.chunk_overlap = chunk_overlap
             self.evaluation_mode = evaluation_mode
+            self.precomputed_chunks = precomputed_chunks
 
             self._metrics = PipelineMetrics(0.0, 0, 0, 0, 0.0)
             self._indexer = DocumentIndexer(self._config)
@@ -288,13 +305,15 @@ class RAGPipeline:
         except Exception as e:
             raise RAGPipelineExecutionError(f"Failed to retrieve context: {str(e)}")
 
-    def _calculate_metrics(self, start_time: float, usage_info: Dict[str, Any]) -> PipelineMetrics:
+    def _calculate_metrics(self, start_time: float, usage_info: Optional[Dict[str, Any]]) -> PipelineMetrics:
         """Calculate pipeline metrics from execution data"""
         total_time = time.time() - start_time
 
-        prompt_tokens = usage_info.get('prompt_tokens', 0)
-        completion_tokens = usage_info.get('completion_tokens', 0)
-        total_tokens = usage_info.get('total_tokens', 0)
+        usage_data: Dict[str, Any] = usage_info or {}
+
+        prompt_tokens = usage_data.get('prompt_tokens', 0)
+        completion_tokens = usage_data.get('completion_tokens', 0)
+        total_tokens = usage_data.get('total_tokens', 0)
 
         model_name = self.llm.get_model_name()
         calculated_cost = TokenCostManager.calculate_cost(model_name, prompt_tokens, completion_tokens)

@@ -493,6 +493,84 @@ class MistralLLM(StreamingLLM):
             logger.error(f"Error during Mistral streaming API call: {e}")  # Changed from print to logger
             yield "Error: Could not stream response from model."
 
+class CerebrasLLM(StreamingLLM):
+    """Cerebras model implementation (OpenAI-compatible) with streaming support"""
+
+    def __init__(self, model_name: str = "llama-3.2-3b"):
+        """Initialize the Cerebras model via OpenAI-compatible API"""
+        super().__init__()
+        api_key = os.environ.get("CEREBRAS_API_KEY")
+        if not api_key:
+            raise ValueError("Cerebras API key not found in environment variables")
+
+        # Use OpenAI client with Cerebras base_url
+        self._client = OpenAI(api_key=api_key, base_url=os.environ.get("CEREBRAS_BASE_URL", "https://api.cerebras.ai/v1"))
+        self._model_name = model_name
+
+    def get_model_name(self) -> str:
+        return self._model_name
+
+    def generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Tuple[str, Optional[Dict[str, int]]]:
+        """Generate text from a prompt and optional context"""
+
+        messages = []
+        if system_prompt_override is not None:
+            if system_prompt_override != "":
+                messages.append({"role": "system", "content": system_prompt_override})
+        elif not evaluation_mode:
+            messages.append({"role": "system", "content": self._system_prompt})
+
+        if context:
+            user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
+        else:
+            user_content = prompt
+
+        messages.append({"role": "user", "content": user_content})
+
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model_name,
+                messages=messages
+            )
+            usage = response.usage
+            # Cerebras is OpenAI-compatible, reuse OpenAI usage normalization
+            self._set_last_call_usage(usage, "openai")
+            return response.choices[0].message.content, self._last_call_usage
+        except Exception as e:
+            logger.error(f"Error during Cerebras API call: {e}")
+            self._set_last_call_usage(None, "openai")
+            return "Error: Could not get response from model.", None
+
+    def stream_generate(self, prompt: str, context: Optional[str] = None, evaluation_mode: bool = False, system_prompt_override: Optional[str] = None) -> Iterator[str]:
+        """Stream generate text from a prompt and optional context"""
+
+        messages = []
+        if system_prompt_override is not None:
+            if system_prompt_override != "":
+                messages.append({"role": "system", "content": system_prompt_override})
+        elif not evaluation_mode:
+            messages.append({"role": "system", "content": self._system_prompt})
+
+        if context:
+            user_content = self._prompt_provider.get_prompt('query', context=context, question=prompt)
+        else:
+            user_content = prompt
+
+        messages.append({"role": "user", "content": user_content})
+
+        try:
+            stream = self._client.chat.completions.create(
+                model=self._model_name,
+                messages=messages,
+                stream=True
+            )
+            for chunk in stream:
+                if chunk.choices[0].delta and chunk.choices[0].delta.content is not None:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            logger.error(f"Error during Cerebras streaming API call: {e}")
+            yield "Error: Could not stream response from model."
+
 class LLMFactory:
     """Factory for creating LLM models (Factory Pattern)"""
     
@@ -517,5 +595,7 @@ class LLMFactory:
             return MistralLLM(model_name="mistral-medium-latest")
         elif model_type == LLMModelType.MISTRAL_SMALL:
             return MistralLLM(model_name="mistral-small-latest")
+        elif model_type == LLMModelType.CEREBRAS_LLAMA3_3B:
+            return CerebrasLLM(model_name="llama-3.2-3b")
         else:
             raise ValueError(f"Unsupported LLM model: {model_type}")

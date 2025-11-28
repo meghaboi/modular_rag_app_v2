@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Dict, Any, Type, ClassVar
+from typing import Dict, Any, Type, ClassVar, Optional, List
 from dataclasses import dataclass, field
 
 from utils.enums import (
@@ -32,6 +32,7 @@ class PipelineConfig:
         CHUNK_OVERLAP = "chunk_overlap"
         TOP_K = "top_k"
         EVALUATION_MODE = "evaluation_mode"
+        PRECOMPUTED_CHUNKS = "precomputed_chunks"
 
     # --- Configuration fields ---
     file_path: str
@@ -39,13 +40,13 @@ class PipelineConfig:
     vector_store_type: VectorStoreType
     reranker_type: RerankerModelType
     llm_type: LLMModelType
-    contextualLlm_type: LLMModelType
     chunking_strategy_type: ChunkingStrategyType
     hybrid_alpha: float = field(default=DEFAULT_HYBRID_ALPHA)
     chunk_size: int = field(default=DEFAULT_CHUNK_SIZE)
     chunk_overlap: int = field(default=DEFAULT_CHUNK_OVERLAP)
     top_k: int = field(default=DEFAULT_TOP_K)
     evaluation_mode: bool = field(default=DEFAULT_EVALUATION_MODE)
+    precomputed_chunks: Optional[List[str]] = field(default=None)
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -75,8 +76,7 @@ class PipelineConfig:
             vector_store_type=VectorStoreType.CHROMA,
             reranker_type=RerankerModelType.NONE,
             llm_type=LLMModelType.CLAUDE_3_SONNET,
-            chunking_strategy_type=ChunkingStrategyType.PARAGRAPH,
-            contextualLlm_type=LLMModelType.CLAUDE_3_SONNET
+            chunking_strategy_type=ChunkingStrategyType.PARAGRAPH
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -92,7 +92,8 @@ class PipelineConfig:
             self.Keys.CHUNK_SIZE: self.chunk_size,
             self.Keys.CHUNK_OVERLAP: self.chunk_overlap,
             self.Keys.TOP_K: self.top_k,
-            self.Keys.EVALUATION_MODE: self.evaluation_mode
+            self.Keys.EVALUATION_MODE: self.evaluation_mode,
+            self.Keys.PRECOMPUTED_CHUNKS: self.precomputed_chunks
         }
 
     @classmethod
@@ -109,7 +110,8 @@ class PipelineConfig:
             chunk_size=config_dict.get(cls.Keys.CHUNK_SIZE, cls.DEFAULT_CHUNK_SIZE),
             chunk_overlap=config_dict.get(cls.Keys.CHUNK_OVERLAP, cls.DEFAULT_CHUNK_OVERLAP),
             top_k=config_dict.get(cls.Keys.TOP_K, cls.DEFAULT_TOP_K),
-            evaluation_mode=config_dict.get(cls.Keys.EVALUATION_MODE, cls.DEFAULT_EVALUATION_MODE)
+            evaluation_mode=config_dict.get(cls.Keys.EVALUATION_MODE, cls.DEFAULT_EVALUATION_MODE),
+            precomputed_chunks=config_dict.get(cls.Keys.PRECOMPUTED_CHUNKS)
         )
 
     def save_to_file(self, file_path: str) -> None:
@@ -136,5 +138,6 @@ class PipelineConfig:
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,
             top_k=self.top_k,
-            evaluation_mode=self.evaluation_mode
+            evaluation_mode=self.evaluation_mode,
+            precomputed_chunks=self.precomputed_chunks
         )

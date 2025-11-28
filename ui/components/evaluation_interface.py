@@ -68,6 +68,16 @@ class EvaluationInterface:
         ground_truth = st.text_area("Enter the ideal 'ground truth' answer:", height=100, key="eval_ground_truth")
         st.info("Providing ground truth enables detailed RAGAS evaluation scores.")
 
+        # Toggle: contextual RAG precompute once and reuse across permutations
+        st.checkbox(
+            "Contextual RAG (compute once, reuse across permutations)",
+            key="use_contextual_once",
+            help=(
+                "When enabled with the 'Contextual' chunking strategy, the contextual chunks "
+                "are computed a single time and reused for all model permutations."
+            ),
+        )
+
         is_disabled = self._are_evaluation_buttons_disabled()
         current_config_clicked = st.button("Evaluate Current Config", disabled=is_disabled)
         all_permutations_clicked = st.button("Run All Permutations Test", disabled=is_disabled)
@@ -360,7 +370,8 @@ class EvaluationInterface:
             top_k=st.session_state.top_k,
             hybrid_alpha=st.session_state.hybrid_alpha,
             chunking_strategy_enum=chunking_strategy,
-            output_csv_file=output_filename
+            output_csv_file=output_filename,
+            use_contextual_once=bool(st.session_state.get("use_contextual_once", False))
         )
 
         st.session_state.permutation_df = results_df
