@@ -112,12 +112,11 @@ class UIPromptProvider(BasePromptProvider):
 class RerankerPromptProvider(BasePromptProvider):
     """Provider for reranking-related prompts."""
     
-    def __init__(self):
-        """Initialize the reranker prompt provider."""
-        self._templates = {
+    def _load_templates(self):
+        self.templates = {
             'rerank': prompt_templates.RERANKING_TEMPLATE
         }
-    
+
     def get_prompt(self, prompt_type: str, **kwargs) -> str:
         """Get a prompt with the given type and parameters."""
         if prompt_type == 'rerank':

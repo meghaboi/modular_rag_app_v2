@@ -1,11 +1,12 @@
 from typing import List, Dict, Any, Tuple
 from abc import ABC, abstractmethod
 import re
+import os
+import logging
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from utils.token_utils import TokenCounter
-from models.llm_models import ClaudeLLM
 from prompts import get_provider
 
 
@@ -79,26 +80,54 @@ class ChunkingStrategy(ABC):
         return overlap_units
 
 class ContextualChunking(ChunkingStrategy):
-    """Contextual chunking: adds succinct context to each chunk using Claude Haiku and the whole document."""
-    def __init__(self, base_chunker=None, llm_model=ClaudeLLM(model_name="claude-3-5-haiku-20241022")):
+    """Contextual chunking: adds succinct context to each chunk using Claude Haiku and the whole document.
+
+    Note: LLM dependency is created lazily to avoid import-time failures when API keys are missing.
+    """
+    def __init__(self, base_chunker=None, llm_model=None):
         super().__init__()
         self.base_chunker = base_chunker or SlidingWindowChunking()
-        self.llm = llm_model
+        self.llm = llm_model  # may be None; created lazily when needed
         self.prompt_provider = get_provider('contextual_chunking')
+        self.logger = logging.getLogger(__name__)
+
+    def _ensure_llm(self):
+        """Instantiate a default Claude LLM lazily if not provided and if possible."""
+        if self.llm is not None:
+            return
+        # Only attempt creation if Anthropic API key appears available
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            self.logger.warning("ContextualChunking: ANTHROPIC_API_KEY not set; falling back to non-contextual chunks.")
+            self.llm = None
+            return
+        try:
+            from models.llm_models import ClaudeLLM  # local import to avoid heavy dependencies at module import
+            self.llm = ClaudeLLM(model_name="claude-3-5-haiku-20241022")
+        except Exception as e:
+            self.logger.warning(f"ContextualChunking: Failed to initialize ClaudeLLM ({e}); proceeding without context.")
+            self.llm = None
 
     def chunk_text(self, text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
         chunks = self.base_chunker.chunk_text(text, chunk_size, chunk_overlap)
         results: List[str] = []
+
+        # Ensure LLM is ready (or decide to skip contextualization)
+        self._ensure_llm()
+
         for chunk in chunks:
-            prompt = self.prompt_provider.get_prompt(
-                'contextual_chunking',
-                WHOLE_DOCUMENT=text,
-                CHUNK_CONTENT=chunk
-            )
-            try:
-                context, _ = self.llm.generate(prompt)
-            except Exception as e:
-                context = f"[Context generation failed: {e}]"
+            if self.llm is None:
+                # No LLM available; return chunk without added context but keep structure
+                context = "[Context unavailable]"
+            else:
+                prompt = self.prompt_provider.get_prompt(
+                    'contextual_chunking',
+                    WHOLE_DOCUMENT=text,
+                    CHUNK_CONTENT=chunk
+                )
+                try:
+                    context, _ = self.llm.generate(prompt)
+                except Exception as e:
+                    context = f"[Context generation failed: {e}]"
             # Combine context and chunk as a single string to keep downstream expectations (List[str])
             combined = f"[CONTEXT]\n{context}\n\n[CHUNK]\n{chunk}"
             results.append(combined)

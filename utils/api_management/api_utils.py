@@ -11,8 +11,7 @@ def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_e
     missing_keys_list = []
 
     openai_needed = (embedding_model_enum == EmbeddingModelType.OPENAI or
-                     llm_enum in [LLMModelType.OPENAI_GPT35, LLMModelType.OPENAI_GPT4] or
-                     True)
+                     llm_enum in [LLMModelType.OPENAI_GPT35, LLMModelType.OPENAI_GPT4])
     cohere_needed = (embedding_model_enum == EmbeddingModelType.COHERE or
                      reranker_enum in [RerankerModelType.COHERE_V2, RerankerModelType.COHERE_V3, RerankerModelType.COHERE_MULTILINGUAL])
     gemini_needed = (embedding_model_enum == EmbeddingModelType.GEMINI or
@@ -20,6 +19,7 @@ def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_e
     anthropic_needed = (llm_enum in [LLMModelType.CLAUDE_4_OPUS, LLMModelType.CLAUDE_4_SONNET])
     mistral_needed = (embedding_model_enum == EmbeddingModelType.MISTRAL or
                       llm_enum in [LLMModelType.MISTRAL_LARGE, LLMModelType.MISTRAL_MEDIUM, LLMModelType.MISTRAL_SMALL])
+    cerebras_needed = (llm_enum == LLMModelType.CEREBRAS_LLAMA3_3B)
     voyage_needed = (embedding_model_enum == EmbeddingModelType.VOYAGE or
                      reranker_enum in [RerankerModelType.VOYAGE_2, RerankerModelType.VOYAGE_1])
 
@@ -53,10 +53,16 @@ def check_api_keys(embedding_model_enum, vector_store_enum, reranker_enum, llm_e
         api_keys_status[key_name] = "Available" if is_available else "Missing"
         if not is_available: missing_keys_list.append(key_name)
 
+    if cerebras_needed:
+        key_name = "Cerebras API Key"
+        is_available = bool(os.getenv("CEREBRAS_API_KEY"))
+        api_keys_status[key_name] = "Available" if is_available else "Missing"
+        if not is_available: missing_keys_list.append(key_name)
+
     if voyage_needed:
         key_name = "Voyage AI API Key"
         is_available = bool(os.getenv("VOYAGE_API_KEY"))
         api_keys_status[key_name] = "Available" if is_available else "Missing"
         if not is_available: missing_keys_list.append(key_name)
 
-    return missing_keys_list 
+    return missing_keys_list

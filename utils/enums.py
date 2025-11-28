@@ -8,6 +8,7 @@ class EmbeddingModelType(Enum):
     MISTRAL = "Mistral"
     VOYAGE = "Voyage"  
     QWEN = "Qwen"
+    LINQ = "Linq"
     
     @classmethod
     def list(cls) -> List[str]:
@@ -54,6 +55,7 @@ class LLMModelType(Enum):
     MISTRAL_LARGE = "Mistral-Large"
     MISTRAL_MEDIUM = "Mistral-Medium"
     MISTRAL_SMALL = "Mistral-Small"
+    CEREBRAS_LLAMA3_3B = "Cerebras Llama-3.2-3B"
     
     @classmethod
     def list(cls) -> List[str]:

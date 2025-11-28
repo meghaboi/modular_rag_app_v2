@@ -84,7 +84,11 @@ class TokenCostManager:
         # LLAMA (often self-hosted, but if using a paid API, e.g. Replicate, Fireworks)
         # Example for Llama-2-70b-chat on Fireworks: $0.90/1M tokens combined.
         # For simplicity, splitting it, but actual pricing might vary.
-        "llama-2-70b-chat": {"input": 0.00045, "output": 0.00045}
+        "llama-2-70b-chat": {"input": 0.00045, "output": 0.00045},
+
+        # Cerebras (OpenAI-compatible). Pricing is provider-dependent; placeholder values below.
+        # Update with your actual Cerebras plan pricing (per 1K tokens).
+        "llama-3.2-3b": {"input": 0.0002, "output": 0.0002}
     }
 
     @staticmethod
