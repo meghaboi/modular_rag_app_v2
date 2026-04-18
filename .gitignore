@@ -28,6 +28,8 @@ var/
 venv/
 ENV/
 .venv/
+frontend/node_modules/
+frontend/.next/
 
 # OS-specific files
 .DS_Store

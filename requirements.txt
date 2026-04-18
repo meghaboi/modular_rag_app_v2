@@ -4,11 +4,15 @@ pandas>=2.0.0
 numpy>=1.24.0
 transformers>=4.51.0
 torch
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
 
 # Vector database and search
 faiss-cpu>=1.7.4
 pymilvus>=2.3.0
 rank-bm25>=0.2.2
+azure-search-documents>=11.6.0
 
 # LangChain components - Updated to compatible versions
 langchain>=0.1.0
