@@ -37,7 +37,7 @@ const LOADER_STEPS = [
 ];
 
 const STATUS_ITEMS = [
-  "Azure AI Foundry only",
+  "Kimi-K2.5 on Azure AI Foundry",
   "Azure AI Search hybrid retrieval",
   "No external model switchers",
   "Upload once, chat immediately",
@@ -380,11 +380,11 @@ export default function HomePage() {
           <div className="facts-grid">
             <div className="fact-card">
               <span className="status-label">LLM</span>
-              <span className="status-value">Azure deployment</span>
+              <span className="status-value">Kimi-K2.5</span>
             </div>
             <div className="fact-card">
               <span className="status-label">Embeddings</span>
-              <span className="status-value">Azure deployment</span>
+              <span className="status-value">embed-v-4-0</span>
             </div>
             <div className="fact-card">
               <span className="status-label">Store</span>

@@ -3,45 +3,47 @@
 Azure-only RAG application with:
 
 - `frontend/`: Next.js newsprint UI
-- `backend/`: FastAPI API over the existing Python document-processing code
-- Azure AI Foundry / Azure OpenAI for chat + embeddings
+- `backend/`: FastAPI API over the existing Python document-processing flow
+- Azure AI Foundry for chat and embeddings
 - Azure AI Search for hybrid keyword + vector retrieval
 
-## What Changed
+## Runtime Shape
 
-- Removed the active UI surface for model switching
-- Removed the active UI surface for evaluation flows
-- Replaced the Streamlit-first UX with a simple upload-then-chat workflow
-- Kept the Python backend and reused the existing chunking/prompt utilities where useful
+- Main chat model: `Kimi-K2.5`
+- Embeddings: `embed-v-4-0`
+- Retrieval: Azure AI Search hybrid search
+- Active product flow: `upload -> index -> chat`
+- No active model switcher in the user-facing app
+- No active evaluation surface in the user-facing app
 
-## Architecture
+## Auth
 
-1. User uploads one PDF or TXT file from the Next.js app.
-2. FastAPI extracts text, chunks it, creates embeddings through Azure, and indexes the chunks into Azure AI Search.
-3. Chat requests run hybrid retrieval against the indexed session data.
-4. The Azure chat deployment answers using only the retrieved context.
+The backend now supports two auth modes:
 
-## Required Environment
+1. Preferred: Microsoft Entra ID through your local Azure login (`az login`)
+2. Optional fallback: API keys
 
-Copy `.env.example` to `.env` and fill in:
+That means you do not need a `.env` file for secrets if your signed-in identity has access to:
 
-- `AZURE_OPENAI_ENDPOINT`
-- `AZURE_OPENAI_API_KEY`
-- `AZURE_OPENAI_CHAT_DEPLOYMENT`
-- `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`
-- `AZURE_SEARCH_ENDPOINT`
-- `AZURE_SEARCH_API_KEY`
+- the Azure AI Foundry resource / deployments
+- the Azure AI Search service
 
-Optional tuning:
+You still need to tell the app which Foundry resource and Search service to talk to, either through shell environment variables or `.env`.
 
-- `AZURE_OPENAI_EMBEDDING_DIMENSIONS`
+## Config
+
+Copy `.env.example` to `.env` only if you want local file-based config. The main values are:
+
+- `AZURE_FOUNDRY_RESOURCE_NAME` or `AZURE_FOUNDRY_BASE_URL`
+- `AZURE_FOUNDRY_CHAT_DEPLOYMENT`
+- `AZURE_FOUNDRY_EMBEDDING_DEPLOYMENT`
+- `AZURE_SEARCH_SERVICE_NAME` or `AZURE_SEARCH_ENDPOINT`
 - `AZURE_SEARCH_INDEX_NAME`
-- `FRONTEND_ORIGIN`
-- `RAG_CHUNK_SIZE`
-- `RAG_CHUNK_OVERLAP`
-- `RAG_TOP_K`
-- `RAG_CHUNKING_STRATEGY`
-- `AZURE_OPENAI_TEMPERATURE`
+
+Optional only for key-based auth:
+
+- `AZURE_FOUNDRY_API_KEY`
+- `AZURE_SEARCH_API_KEY`
 
 ## Local Run
 
@@ -78,7 +80,7 @@ NEXT_PUBLIC_API_BASE_URL=http://your-backend-host:8000
 
 ## Verification
 
-The current branch includes:
+The branch includes:
 
 - a production-clean `next build`
 - Python compile checks for `backend`, `prompts`, `models`, and `utils`
@@ -86,5 +88,5 @@ The current branch includes:
 
 ## Notes
 
-- The legacy Streamlit code is still present in the repo, but it is no longer the intended app surface.
-- The new active flow is `upload -> index -> chat`.
+- The legacy Streamlit code still exists in the repo, but the intended app surface is the Next.js frontend plus FastAPI backend.
+- If you want full zero-config runtime beyond auth, the next step is provisioning a dedicated v2 Foundry resource and Search service and then wiring their names into the app defaults.

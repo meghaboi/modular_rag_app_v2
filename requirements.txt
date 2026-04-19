@@ -1,49 +1,24 @@
 # Core dependencies
-streamlit>=1.28.0
-pandas>=2.0.0
-numpy>=1.24.0
-transformers>=4.51.0
-torch
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
 
-# Vector database and search
-faiss-cpu>=1.7.4
-pymilvus>=2.3.0
-rank-bm25>=0.2.2
+# Azure AI Search (hybrid vector store)
 azure-search-documents>=11.6.0
+azure-identity>=1.19.0
 
-# LangChain components - Updated to compatible versions
-langchain>=0.1.0
-langchain-core>=0.1.0
-langchain-openai>=0.0.5
-langchain-google-genai>=0.0.5
-langchain-cohere>=0.0.1
-
-# API clients
+# Azure AI Foundry / OpenAI client
 openai>=1.5.0
-google-generativeai>=0.3.0,<0.4.0
-anthropic>=0.20.0
-mistralai>=1.7.0
 
-# Text processing and ML
-tiktoken>=0.5.1
-sentence-transformers>=2.2.2
-torch>=1.13.0
+# Text processing
+numpy>=1.24.0
 scikit-learn>=1.3.0
-sympy>=1.12.0
+tiktoken>=0.5.1
 
 # Document processing
 PyPDF2>=3.0.1
-gTTS>=2.2.4
 
 # Utilities
 python-dotenv>=1.0.0
 requests>=2.31.0
 httpx>=0.25.0
-protobuf>=3.20.0,<4.0.0
-langsmith>=0.0.69
-
-cohere>=4.21
-voyageai>=0.2.0

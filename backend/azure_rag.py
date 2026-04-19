@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from azure.core.credentials import AzureKeyCredential
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from azure.search.documents import SearchClient
 from azure.search.documents.indexes import SearchIndexClient
 from azure.search.documents.indexes.models import (
@@ -17,7 +17,7 @@ from azure.search.documents.indexes.models import (
     VectorSearchProfile,
 )
 from azure.search.documents.models import VectorizedQuery
-from openai import AzureOpenAI
+from openai import OpenAI
 
 from backend.config import Settings
 from backend.models import ChatTurn, SourceChunk, UsageStats
@@ -32,18 +32,29 @@ class AzureRagError(RuntimeError):
 
 
 class AzureRagService:
-    """Azure-only RAG service using AI Foundry deployments and Azure AI Search."""
+    """Azure-only RAG service using Azure AI Foundry and Azure AI Search."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
         self._prompt_provider = get_provider("llm")
         self._chunker = ChunkingStrategyFactory.get_strategy(settings.chunking_strategy)
-        self._aoai_client = AzureOpenAI(
-            api_key=settings.azure_openai_api_key,
-            api_version=settings.azure_openai_api_version,
-            azure_endpoint=settings.azure_openai_endpoint,
+        self._default_credential = DefaultAzureCredential(exclude_interactive_browser_credential=False)
+
+        foundry_auth = (
+            settings.foundry_api_key
+            if settings.foundry_api_key
+            else get_bearer_token_provider(self._default_credential, "https://ai.azure.com/.default")
         )
-        search_credential = AzureKeyCredential(settings.azure_search_api_key)
+        self._foundry_client = OpenAI(
+            api_key=foundry_auth,
+            base_url=settings.foundry_base_url,
+        )
+
+        search_credential = (
+            AzureKeyCredential(settings.azure_search_api_key)
+            if settings.azure_search_api_key
+            else self._default_credential
+        )
         self._index_client = SearchIndexClient(
             endpoint=settings.azure_search_endpoint,
             credential=search_credential,
@@ -124,8 +135,8 @@ class AzureRagService:
             "\n\nUse only the provided context. When you rely on a snippet, cite it as [1], [2], etc."
         )
 
-        response = self._aoai_client.chat.completions.create(
-            model=self.settings.azure_openai_chat_deployment,
+        response = self._foundry_client.chat.completions.create(
+            model=self.settings.foundry_chat_deployment,
             temperature=self.settings.temperature,
             messages=[
                 {
@@ -184,18 +195,18 @@ class AzureRagService:
             self._search_client.delete_documents(batch)
 
     def _embed_text(self, text: str) -> list[float]:
-        response = self._aoai_client.embeddings.create(
-            model=self.settings.azure_openai_embedding_deployment,
+        response = self._foundry_client.embeddings.create(
+            model=self.settings.foundry_embedding_deployment,
             input=text,
-            dimensions=self.settings.azure_openai_embedding_dimensions,
+            dimensions=self.settings.foundry_embedding_dimensions,
         )
         return list(response.data[0].embedding)
 
     def _embed_texts(self, texts: list[str]) -> list[list[float]]:
-        response = self._aoai_client.embeddings.create(
-            model=self.settings.azure_openai_embedding_deployment,
+        response = self._foundry_client.embeddings.create(
+            model=self.settings.foundry_embedding_deployment,
             input=texts,
-            dimensions=self.settings.azure_openai_embedding_dimensions,
+            dimensions=self.settings.foundry_embedding_dimensions,
         )
         return [list(item.embedding) for item in response.data]
 
@@ -242,7 +253,7 @@ class AzureRagService:
                 name="content_vector",
                 type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
                 searchable=True,
-                vector_search_dimensions=self.settings.azure_openai_embedding_dimensions,
+                vector_search_dimensions=self.settings.foundry_embedding_dimensions,
                 vector_search_profile_name="ca-rag-vector-profile",
             ),
         ]
