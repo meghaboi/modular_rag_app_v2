@@ -30,6 +30,8 @@ ENV/
 .venv/
 frontend/node_modules/
 frontend/.next/
+!frontend/lib/
+!frontend/lib/**
 
 # OS-specific files
 .DS_Store
