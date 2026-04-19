@@ -180,8 +180,7 @@ jobs:
           .\scripts\deploy-frontend.ps1 `
             -ResourceGroup "${{ env.AZURE_RESOURCE_GROUP }}" `
             -StorageAccountName "${{ env.AZURE_STORAGE_ACCOUNT }}" `
-            -ApiBaseUrl "${{ env.NEXT_PUBLIC_API_BASE_URL }}" `
-            -StorageAccountKey "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}"
+            -ApiBaseUrl "${{ env.NEXT_PUBLIC_API_BASE_URL }}"
 
       - name: Verify frontend
         shell: pwsh

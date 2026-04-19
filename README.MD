@@ -106,8 +106,9 @@ GitHub Actions:
 
 - `.github/workflows/ca-rag.yml` now runs CI on pull requests and performs real Azure deploys on `push` to `CA-RAG` or manual dispatch.
 - Backend deploys use Azure federated login plus an app-settings sync step, so App Service config stays in source control instead of drifting in the portal.
+- Frontend deploys reuse the Azure login and pull the active storage account key at runtime, so there is no separate static-site deploy secret to rotate.
 - Required repo secrets are:
-  `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_STORAGE_ACCOUNT_KEY`,
+  `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
   `AZURE_FOUNDRY_CHAT_API_KEY`, `AZURE_FOUNDRY_EMBEDDING_API_KEY`,
   `AZURE_FOUNDRY_CHAT_FALLBACK_API_KEY`, `AZURE_SEARCH_API_KEY`
 
