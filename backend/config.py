@@ -31,22 +31,27 @@ def _normalize_foundry_base_url(raw_value: str) -> str:
     return f"{cleaned}/"
 
 
-def _resolve_foundry_base_url() -> str:
-    direct_base_url = _get_env("AZURE_FOUNDRY_BASE_URL")
+def _resolve_foundry_base_url(
+    direct_names: tuple[str, ...],
+    endpoint_names: tuple[str, ...],
+    resource_names: tuple[str, ...],
+) -> str:
+    direct_base_url = _get_env(*direct_names)
     if direct_base_url:
         return _normalize_foundry_base_url(direct_base_url)
 
-    endpoint = _get_env("AZURE_FOUNDRY_ENDPOINT", "AZURE_OPENAI_ENDPOINT")
+    endpoint = _get_env(*endpoint_names)
     if endpoint:
         return _normalize_foundry_base_url(endpoint)
 
-    resource_name = _get_env("AZURE_FOUNDRY_RESOURCE_NAME")
+    resource_name = _get_env(*resource_names)
     if resource_name:
         return f"https://{resource_name}.services.ai.azure.com/openai/v1/"
 
     raise SettingsError(
-        "Missing Foundry endpoint configuration. Set AZURE_FOUNDRY_BASE_URL, "
-        "AZURE_FOUNDRY_ENDPOINT, AZURE_OPENAI_ENDPOINT, or AZURE_FOUNDRY_RESOURCE_NAME."
+        "Missing Foundry endpoint configuration. Set a chat or embedding base URL/endpoint "
+        "(for example AZURE_FOUNDRY_CHAT_BASE_URL or AZURE_FOUNDRY_EMBEDDING_BASE_URL), "
+        "or use the shared AZURE_FOUNDRY_BASE_URL / AZURE_FOUNDRY_ENDPOINT variables."
     )
 
 
@@ -87,9 +92,14 @@ def _get_float(name: str, default: float) -> float:
 
 @dataclass(frozen=True)
 class Settings:
-    foundry_base_url: str
-    foundry_api_key: str | None
+    foundry_chat_base_url: str
+    foundry_chat_api_key: str | None
     foundry_chat_deployment: str
+    foundry_chat_fallback_base_url: str | None
+    foundry_chat_fallback_api_key: str | None
+    foundry_chat_fallback_deployment: str | None
+    foundry_embedding_base_url: str
+    foundry_embedding_api_key: str | None
     foundry_embedding_deployment: str
     foundry_embedding_dimensions: int
     azure_search_endpoint: str
@@ -104,14 +114,57 @@ class Settings:
 
     @property
     def auth_mode(self) -> str:
-        return "api_key" if self.foundry_api_key or self.azure_search_api_key else "entra_id"
+        return (
+            "api_key"
+            if self.foundry_chat_api_key
+            or self.foundry_chat_fallback_api_key
+            or self.foundry_embedding_api_key
+            or self.azure_search_api_key
+            else "entra_id"
+        )
 
     @classmethod
     def from_env(cls) -> "Settings":
+        chat_base_url = _resolve_foundry_base_url(
+            direct_names=("AZURE_FOUNDRY_CHAT_BASE_URL", "AZURE_FOUNDRY_BASE_URL"),
+            endpoint_names=("AZURE_FOUNDRY_CHAT_ENDPOINT", "AZURE_FOUNDRY_ENDPOINT"),
+            resource_names=("AZURE_FOUNDRY_CHAT_RESOURCE_NAME", "AZURE_FOUNDRY_RESOURCE_NAME"),
+        )
+        embedding_base_url = _resolve_foundry_base_url(
+            direct_names=("AZURE_FOUNDRY_EMBEDDING_BASE_URL", "AZURE_FOUNDRY_BASE_URL"),
+            endpoint_names=("AZURE_FOUNDRY_EMBEDDING_ENDPOINT", "AZURE_FOUNDRY_ENDPOINT"),
+            resource_names=("AZURE_FOUNDRY_EMBEDDING_RESOURCE_NAME", "AZURE_FOUNDRY_RESOURCE_NAME"),
+        )
+        chat_fallback_base_url = _get_env(
+            "AZURE_FOUNDRY_CHAT_FALLBACK_BASE_URL",
+            "AZURE_FOUNDRY_CHAT_FALLBACK_ENDPOINT",
+        )
+
         return cls(
-            foundry_base_url=_resolve_foundry_base_url(),
-            foundry_api_key=_get_env("AZURE_FOUNDRY_API_KEY", "AZURE_OPENAI_API_KEY"),
+            foundry_chat_base_url=chat_base_url,
+            foundry_chat_api_key=_get_env(
+                "AZURE_FOUNDRY_CHAT_API_KEY",
+                "AZURE_FOUNDRY_API_KEY",
+                "AZURE_OPENAI_API_KEY",
+            ),
             foundry_chat_deployment=os.getenv("AZURE_FOUNDRY_CHAT_DEPLOYMENT", "Kimi-K2.5"),
+            foundry_chat_fallback_base_url=(
+                _normalize_foundry_base_url(chat_fallback_base_url)
+                if chat_fallback_base_url
+                else None
+            ),
+            foundry_chat_fallback_api_key=_get_env(
+                "AZURE_FOUNDRY_CHAT_FALLBACK_API_KEY",
+            ),
+            foundry_chat_fallback_deployment=_get_env(
+                "AZURE_FOUNDRY_CHAT_FALLBACK_DEPLOYMENT",
+            ),
+            foundry_embedding_base_url=embedding_base_url,
+            foundry_embedding_api_key=_get_env(
+                "AZURE_FOUNDRY_EMBEDDING_API_KEY",
+                "AZURE_FOUNDRY_API_KEY",
+                "AZURE_OPENAI_API_KEY",
+            ),
             foundry_embedding_deployment=os.getenv(
                 "AZURE_FOUNDRY_EMBEDDING_DEPLOYMENT",
                 "embed-v-4-0",

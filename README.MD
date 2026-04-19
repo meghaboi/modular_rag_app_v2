@@ -86,6 +86,31 @@ The branch includes:
 - Python compile checks for `backend`, `prompts`, `models`, and `utils`
 - GitHub Actions in `.github/workflows/ca-rag.yml` for the `CA-RAG` branch
 
+## Azure Deploy
+
+Current public endpoints:
+
+- Frontend: `https://caragv2fe36972.z30.web.core.windows.net/`
+- Backend API: `https://caragv2api36972.azurewebsites.net/`
+
+Repeatable deploy commands:
+
+```powershell
+.\scripts\deploy-backend.ps1
+.\scripts\deploy-frontend.ps1
+```
+
+The frontend deploy script builds `frontend/` as a static export and uploads it to the Azure Storage `$web` container. The backend deploy script packages only the FastAPI runtime files needed by Azure App Service.
+
+GitHub Actions:
+
+- `.github/workflows/ca-rag.yml` now runs CI on pull requests and performs real Azure deploys on `push` to `CA-RAG` or manual dispatch.
+- Backend deploys use Azure federated login plus an app-settings sync step, so App Service config stays in source control instead of drifting in the portal.
+- Required repo secrets are:
+  `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_STORAGE_ACCOUNT_KEY`,
+  `AZURE_FOUNDRY_CHAT_API_KEY`, `AZURE_FOUNDRY_EMBEDDING_API_KEY`,
+  `AZURE_FOUNDRY_CHAT_FALLBACK_API_KEY`, `AZURE_SEARCH_API_KEY`
+
 ## Notes
 
 - The legacy Streamlit code still exists in the repo, but the intended app surface is the Next.js frontend plus FastAPI backend.

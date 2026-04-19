@@ -11,7 +11,10 @@ class ChatTurn(BaseModel):
 
 
 class SourceChunk(BaseModel):
+    document_id: str
     file_name: str
+    folder_path: str
+    file_path: str
     chunk_id: int
     content: str
     score: float | None = None
@@ -23,11 +26,27 @@ class UsageStats(BaseModel):
     total_tokens: int = 0
 
 
-class UploadResponse(BaseModel):
-    session_id: str
+class WorkspaceDocument(BaseModel):
+    document_id: str
     file_name: str
+    folder_path: str
+    file_path: str
     chunk_count: int
-    message: str
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    workspace_name: str
+    chunk_count: int
+    document_count: int
+    folders: list[str] = Field(default_factory=list)
+    documents: list[WorkspaceDocument] = Field(default_factory=list)
+    message: str | None = None
+    file_name: str | None = None
+
+
+class CreateFolderRequest(BaseModel):
+    folder_path: str = Field(min_length=1)
 
 
 class ChatRequest(BaseModel):

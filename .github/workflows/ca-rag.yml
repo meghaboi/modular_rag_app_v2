@@ -1,12 +1,29 @@
-name: CA-RAG CI
+name: CA-RAG CI/CD
 
 on:
-  push:
-    branches:
-      - CA-RAG
   pull_request:
     branches:
       - CA-RAG
+  push:
+    branches:
+      - CA-RAG
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AZURE_RESOURCE_GROUP: ca-rag-v2-rg
+  AZURE_WEBAPP_NAME: caragv2api36972
+  AZURE_WEBAPP_URL: https://caragv2api36972.azurewebsites.net
+  AZURE_STORAGE_ACCOUNT: caragv2fe36972
+  FRONTEND_PUBLIC_URL: https://caragv2fe36972.z30.web.core.windows.net
+  NEXT_PUBLIC_API_BASE_URL: https://caragv2api36972.azurewebsites.net
+
+concurrency:
+  group: ca-rag-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   frontend-build:
@@ -49,3 +66,127 @@ jobs:
 
       - name: Compile backend sources
         run: python -m compileall backend prompts models utils
+
+  deploy-backend:
+    if: github.event_name != 'pull_request'
+    needs:
+      - frontend-build
+      - backend-smoke
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sync backend app settings
+        shell: pwsh
+        env:
+          AZURE_FOUNDRY_CHAT_API_KEY: ${{ secrets.AZURE_FOUNDRY_CHAT_API_KEY }}
+          AZURE_FOUNDRY_EMBEDDING_API_KEY: ${{ secrets.AZURE_FOUNDRY_EMBEDDING_API_KEY }}
+          AZURE_FOUNDRY_CHAT_FALLBACK_API_KEY: ${{ secrets.AZURE_FOUNDRY_CHAT_FALLBACK_API_KEY }}
+          AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
+        run: |
+          $settings = @(
+            "FRONTEND_ORIGIN=${{ env.FRONTEND_PUBLIC_URL }}",
+            "AZURE_FOUNDRY_CHAT_BASE_URL=https://aifca-resource.services.ai.azure.com/openai/v1/",
+            "AZURE_FOUNDRY_CHAT_ENDPOINT=https://aifca-resource.services.ai.azure.com/",
+            "AZURE_FOUNDRY_CHAT_API_KEY=$env:AZURE_FOUNDRY_CHAT_API_KEY",
+            "AZURE_FOUNDRY_CHAT_DEPLOYMENT=Kimi-K2.5",
+            "AZURE_FOUNDRY_EMBEDDING_BASE_URL=https://openclaw-testing-resource.services.ai.azure.com/openai/v1/",
+            "AZURE_FOUNDRY_EMBEDDING_ENDPOINT=https://openclaw-testing-resource.services.ai.azure.com/",
+            "AZURE_FOUNDRY_EMBEDDING_API_KEY=$env:AZURE_FOUNDRY_EMBEDDING_API_KEY",
+            "AZURE_FOUNDRY_EMBEDDING_DEPLOYMENT=embed-v-4-0",
+            "AZURE_FOUNDRY_CHAT_FALLBACK_BASE_URL=https://openclaw-testing-resource.services.ai.azure.com/openai/v1/",
+            "AZURE_FOUNDRY_CHAT_FALLBACK_API_KEY=$env:AZURE_FOUNDRY_CHAT_FALLBACK_API_KEY",
+            "AZURE_FOUNDRY_CHAT_FALLBACK_DEPLOYMENT=gpt-4.1-2",
+            "AZURE_SEARCH_ENDPOINT=https://caragv2search36972.search.windows.net",
+            "AZURE_SEARCH_API_KEY=$env:AZURE_SEARCH_API_KEY",
+            "AZURE_SEARCH_INDEX_NAME=ca-rag-documents",
+            "AZURE_FOUNDRY_EMBEDDING_DIMENSIONS=1536",
+            "RAG_CHUNK_SIZE=800",
+            "RAG_CHUNK_OVERLAP=120",
+            "RAG_TOP_K=5",
+            "RAG_CHUNKING_STRATEGY=Paragraph-based",
+            "AZURE_FOUNDRY_TEMPERATURE=0.2",
+            "WEBSITE_HTTPLOGGING_RETENTION_DAYS=3"
+          )
+
+          az webapp config appsettings set `
+            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" `
+            --name "${{ env.AZURE_WEBAPP_NAME }}" `
+            --settings $settings | Out-Null
+
+      - name: Deploy backend
+        shell: pwsh
+        run: |
+          .\scripts\deploy-backend.ps1 `
+            -ResourceGroup "${{ env.AZURE_RESOURCE_GROUP }}" `
+            -WebAppName "${{ env.AZURE_WEBAPP_NAME }}"
+
+      - name: Verify backend health
+        shell: pwsh
+        run: |
+          $healthUrl = "${{ env.AZURE_WEBAPP_URL }}/api/health"
+
+          for ($attempt = 1; $attempt -le 24; $attempt++) {
+            try {
+              $response = Invoke-RestMethod -Method Get -Uri $healthUrl -TimeoutSec 20
+              if ($response.status -eq "ok") {
+                $response | ConvertTo-Json -Compress
+                exit 0
+              }
+            }
+            catch {
+              Write-Host "Health check attempt $attempt failed."
+            }
+
+            Start-Sleep -Seconds 10
+          }
+
+          throw "Backend health check failed: $healthUrl"
+
+  deploy-frontend:
+    if: github.event_name != 'pull_request'
+    needs:
+      - deploy-backend
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Deploy frontend
+        shell: pwsh
+        run: |
+          .\scripts\deploy-frontend.ps1 `
+            -ResourceGroup "${{ env.AZURE_RESOURCE_GROUP }}" `
+            -StorageAccountName "${{ env.AZURE_STORAGE_ACCOUNT }}" `
+            -ApiBaseUrl "${{ env.NEXT_PUBLIC_API_BASE_URL }}" `
+            -StorageAccountKey "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}"
+
+      - name: Verify frontend
+        shell: pwsh
+        run: |
+          $response = Invoke-WebRequest -UseBasicParsing -Uri "${{ env.FRONTEND_PUBLIC_URL }}" -TimeoutSec 30
+          if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 400) {
+            throw "Frontend verification failed with status $($response.StatusCode)."
+          }

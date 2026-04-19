@@ -3,9 +3,6 @@ from abc import ABC, abstractmethod
 import re
 import os
 import logging
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from utils.token_utils import TokenCounter
 from prompts import get_provider
 
@@ -251,10 +248,21 @@ class SemanticChunking(ChunkingStrategy):
         super().__init__()
         self.similarity_threshold = similarity_threshold
         self.min_chunk_size = min_chunk_size
+        self.vectorizer = None
+
+    def _ensure_vectorizer(self):
+        """Load sklearn only when semantic chunking is actually used."""
+        if self.vectorizer is not None:
+            return
+
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
         self.vectorizer = TfidfVectorizer(stop_words='english')
 
     def chunk_text(self, text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
         """Split text into chunks based on semantic similarity."""
+        self._ensure_vectorizer()
+
         paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
         if not paragraphs:
             return []
@@ -262,6 +270,8 @@ class SemanticChunking(ChunkingStrategy):
             return ["\n\n".join(paragraphs)]
 
         try:
+            from sklearn.metrics.pairwise import cosine_similarity
+
             tfidf_matrix = self.vectorizer.fit_transform(paragraphs)
             similarity_matrix = cosine_similarity(tfidf_matrix)
         except ValueError: # Fallback if TF-IDF fails (e.g., all stop words)
@@ -289,9 +299,11 @@ class SemanticChunking(ChunkingStrategy):
 
         return self._ensure_chunk_constraints(chunks, chunk_size)
 
-    def _should_merge_paragraph(self, para_idx: int, all_paras: List[str], sim_matrix: np.ndarray, 
+    def _should_merge_paragraph(self, para_idx: int, all_paras: List[str], sim_matrix: Any,
                                   chunk_paras: List[str], chunk_tokens: int, para_tokens: int, chunk_size: int) -> bool:
         """Determines if the next paragraph should be merged into the current chunk."""
+        import numpy as np
+
         # Calculate average similarity of the new paragraph to the paragraphs already in the chunk
         similarities = [sim_matrix[para_idx][all_paras.index(p)] for p in chunk_paras]
         avg_similarity = np.mean(similarities) if similarities else 0

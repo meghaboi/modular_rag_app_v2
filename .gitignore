@@ -30,8 +30,16 @@ ENV/
 .venv/
 frontend/node_modules/
 frontend/.next/
+frontend/out/
 !frontend/lib/
 !frontend/lib/**
+.deploy_backend/
+caragv2*/
+caragv2*.zip
+deploy_backend.zip
+live_backend_logs/
+live_backend_logs.zip
+tmp_zip_test/
 
 # OS-specific files
 .DS_Store

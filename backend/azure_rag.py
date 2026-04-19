@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
 from azure.core.credentials import AzureKeyCredential
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
@@ -17,7 +18,7 @@ from azure.search.documents.indexes.models import (
     VectorSearchProfile,
 )
 from azure.search.documents.models import VectorizedQuery
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
 from backend.config import Settings
 from backend.models import ChatTurn, SourceChunk, UsageStats
@@ -40,14 +41,34 @@ class AzureRagService:
         self._chunker = ChunkingStrategyFactory.get_strategy(settings.chunking_strategy)
         self._default_credential = DefaultAzureCredential(exclude_interactive_browser_credential=False)
 
-        foundry_auth = (
-            settings.foundry_api_key
-            if settings.foundry_api_key
+        chat_auth = (
+            settings.foundry_chat_api_key
+            if settings.foundry_chat_api_key
             else get_bearer_token_provider(self._default_credential, "https://ai.azure.com/.default")
         )
-        self._foundry_client = OpenAI(
-            api_key=foundry_auth,
-            base_url=settings.foundry_base_url,
+        embedding_auth = (
+            settings.foundry_embedding_api_key
+            if settings.foundry_embedding_api_key
+            else get_bearer_token_provider(self._default_credential, "https://ai.azure.com/.default")
+        )
+        self._chat_client = OpenAI(
+            api_key=chat_auth,
+            base_url=settings.foundry_chat_base_url,
+        )
+        self._chat_fallback_client = None
+        if settings.foundry_chat_fallback_base_url and settings.foundry_chat_fallback_deployment:
+            fallback_auth = (
+                settings.foundry_chat_fallback_api_key
+                if settings.foundry_chat_fallback_api_key
+                else get_bearer_token_provider(self._default_credential, "https://ai.azure.com/.default")
+            )
+            self._chat_fallback_client = OpenAI(
+                api_key=fallback_auth,
+                base_url=settings.foundry_chat_fallback_base_url,
+            )
+        self._embedding_client = OpenAI(
+            api_key=embedding_auth,
+            base_url=settings.foundry_embedding_base_url,
         )
 
         search_credential = (
@@ -66,7 +87,16 @@ class AzureRagService:
         )
         self._ensure_index()
 
-    def ingest_document(self, session_id: str, file_name: str, text: str) -> int:
+    def ingest_document(
+        self,
+        session_id: str,
+        file_name: str,
+        text: str,
+        folder_path: str = "",
+        document_id: str | None = None,
+    ) -> tuple[str, int]:
+        resolved_document_id = document_id or str(uuid.uuid4())
+        file_path = self._compose_file_path(folder_path, file_name)
         chunks = self._chunker.chunk_text(
             text,
             chunk_size=self.settings.chunk_size,
@@ -76,12 +106,17 @@ class AzureRagService:
         if not cleaned_chunks:
             raise AzureRagError("Chunking produced no indexable content.")
 
-        embeddings = self._embed_texts(cleaned_chunks)
+        embeddings = self._embed_texts(
+            [self._build_embedding_input(file_path, chunk) for chunk in cleaned_chunks]
+        )
         payload = [
             {
-                "id": f"{session_id}-{index}",
+                "id": f"{resolved_document_id}-{index}",
                 "session_id": session_id,
+                "document_id": resolved_document_id,
                 "file_name": file_name,
+                "folder_path": folder_path,
+                "file_path": file_path,
                 "chunk_id": index,
                 "content": chunk,
                 "content_vector": embedding,
@@ -96,8 +131,13 @@ class AzureRagService:
                 f"Azure AI Search failed to index chunks: {', '.join(failed_uploads)}"
             )
 
-        logger.info("Indexed %s chunks for session %s", len(payload), session_id)
-        return len(payload)
+        logger.info(
+            "Indexed %s chunks for session %s document %s",
+            len(payload),
+            session_id,
+            file_path,
+        )
+        return resolved_document_id, len(payload)
 
     def answer_question(
         self,
@@ -114,7 +154,12 @@ class AzureRagService:
             )
 
         context_block = "\n\n".join(
-            f"[{index}] {context.content}" for index, context in enumerate(contexts, start=1)
+            (
+                f"[{index}] Path: {context.file_path}\n"
+                f"Chunk: {context.chunk_id + 1}\n"
+                f"Content:\n{context.content}"
+            )
+            for index, context in enumerate(contexts, start=1)
         )
         history_block = self._format_history(history or [])
         if history_block:
@@ -132,20 +177,24 @@ class AzureRagService:
             )
 
         user_prompt += (
-            "\n\nUse only the provided context. When you rely on a snippet, cite it as [1], [2], etc."
+            "\n\nResponse requirements:\n"
+            "- Use only the provided context.\n"
+            "- Keep the answer clear and concise.\n"
+            "- Use clean markdown with normal headings, bullets, and short paragraphs.\n"
+            "- Cite supporting snippets as [1], [2], etc.\n"
+            "- Mention the relevant file path when it improves clarity.\n"
+            "- Do not end with a follow-up question unless the user explicitly asks for options."
         )
 
-        response = self._foundry_client.chat.completions.create(
-            model=self.settings.foundry_chat_deployment,
-            temperature=self.settings.temperature,
-            messages=[
-                {
-                    "role": "system",
-                    "content": self._prompt_provider.get_prompt("system"),
-                },
-                {"role": "user", "content": user_prompt},
-            ],
-        )
+        messages = [
+            {
+                "role": "system",
+                "content": self._prompt_provider.get_prompt("system"),
+            },
+            {"role": "user", "content": user_prompt},
+        ]
+
+        response = self._create_chat_completion(messages)
         usage = response.usage
         answer = response.choices[0].message.content or ""
         usage_stats = UsageStats(
@@ -165,17 +214,21 @@ class AzureRagService:
 
         results = self._search_client.search(
             search_text=question,
+            search_fields=["file_name", "file_path", "content"],
             vector_queries=[vector_query],
             filter=f"session_id eq '{session_id}'",
             top=self.settings.top_k,
-            select=["file_name", "chunk_id", "content"],
+            select=["document_id", "file_name", "folder_path", "file_path", "chunk_id", "content"],
         )
 
         contexts: list[SourceChunk] = []
         for item in results:
             contexts.append(
                 SourceChunk(
+                    document_id=item["document_id"],
                     file_name=item["file_name"],
+                    folder_path=item.get("folder_path", ""),
+                    file_path=item.get("file_path", item["file_name"]),
                     chunk_id=item["chunk_id"],
                     content=item["content"],
                     score=item.get("@search.score"),
@@ -195,19 +248,27 @@ class AzureRagService:
             self._search_client.delete_documents(batch)
 
     def _embed_text(self, text: str) -> list[float]:
-        response = self._foundry_client.embeddings.create(
-            model=self.settings.foundry_embedding_deployment,
-            input=text,
-            dimensions=self.settings.foundry_embedding_dimensions,
-        )
-        return list(response.data[0].embedding)
+        return self._embed_texts([text])[0]
 
     def _embed_texts(self, texts: list[str]) -> list[list[float]]:
-        response = self._foundry_client.embeddings.create(
-            model=self.settings.foundry_embedding_deployment,
-            input=texts,
-            dimensions=self.settings.foundry_embedding_dimensions,
-        )
+        try:
+            response = self._embedding_client.embeddings.create(
+                model=self.settings.foundry_embedding_deployment,
+                input=texts,
+                dimensions=self.settings.foundry_embedding_dimensions,
+            )
+        except APIConnectionError as exc:
+            raise AzureRagError(
+                "Embedding service is unreachable. Verify the Azure AI Foundry endpoint and key."
+            ) from exc
+        except RateLimitError as exc:
+            raise AzureRagError(
+                "Embedding service is busy right now. Retry in a moment."
+            ) from exc
+        except APIStatusError as exc:
+            raise AzureRagError(
+                f"Embedding request failed with status {exc.status_code}."
+            ) from exc
         return [list(item.embedding) for item in response.data]
 
     def _format_history(self, history: list[ChatTurn]) -> str:
@@ -216,10 +277,79 @@ class AzureRagService:
         recent_turns = history[-6:]
         return "\n".join(f"{turn.role.title()}: {turn.content}" for turn in recent_turns)
 
+    def _create_chat_completion(self, messages: list[dict[str, str]]):
+        try:
+            return self._chat_client.chat.completions.create(
+                model=self.settings.foundry_chat_deployment,
+                temperature=self.settings.temperature,
+                messages=messages,
+            )
+        except (APIConnectionError, RateLimitError, APIStatusError) as exc:
+            fallback_client = self._chat_fallback_client
+            fallback_deployment = self.settings.foundry_chat_fallback_deployment
+            if fallback_client and fallback_deployment:
+                logger.warning(
+                    "Primary chat deployment %s failed, falling back to %s.",
+                    self.settings.foundry_chat_deployment,
+                    fallback_deployment,
+                )
+                try:
+                    return fallback_client.chat.completions.create(
+                        model=fallback_deployment,
+                        temperature=self.settings.temperature,
+                        messages=messages,
+                    )
+                except APIConnectionError as fallback_exc:
+                    raise AzureRagError(
+                        "Chat service is unreachable. Verify the Azure AI Foundry endpoint and key."
+                    ) from fallback_exc
+                except RateLimitError as fallback_exc:
+                    raise AzureRagError("Chat service is busy right now. Retry in a moment.") from fallback_exc
+                except APIStatusError as fallback_exc:
+                    raise AzureRagError(
+                        f"Chat request failed with status {fallback_exc.status_code}."
+                    ) from fallback_exc
+
+            if isinstance(exc, APIConnectionError):
+                raise AzureRagError(
+                    "Chat service is unreachable. Verify the Azure AI Foundry endpoint and key."
+                ) from exc
+            if isinstance(exc, RateLimitError):
+                raise AzureRagError("Chat service is busy right now. Retry in a moment.") from exc
+            raise AzureRagError(
+                f"Chat request failed with status {exc.status_code}."
+            ) from exc
+
+    def _build_embedding_input(self, file_path: str, chunk: str) -> str:
+        return f"Path: {file_path}\nContent:\n{chunk}"
+
+    def _compose_file_path(self, folder_path: str, file_name: str) -> str:
+        return f"{folder_path}/{file_name}" if folder_path else file_name
+
     def _ensure_index(self) -> None:
+        required_field_names = {
+            "id",
+            "session_id",
+            "document_id",
+            "file_name",
+            "folder_path",
+            "file_path",
+            "chunk_id",
+            "content",
+            "content_vector",
+        }
         existing = [index.name for index in self._index_client.list_indexes()]
         if self.settings.azure_search_index_name in existing:
-            return
+            existing_index = self._index_client.get_index(self.settings.azure_search_index_name)
+            existing_fields = {field.name for field in existing_index.fields}
+            if required_field_names.issubset(existing_fields):
+                return
+
+            logger.warning(
+                "Recreating Azure AI Search index %s to apply workspace metadata fields.",
+                self.settings.azure_search_index_name,
+            )
+            self._index_client.delete_index(self.settings.azure_search_index_name)
 
         fields = [
             SimpleField(
@@ -234,8 +364,24 @@ class AzureRagService:
                 filterable=True,
                 facetable=True,
             ),
+            SimpleField(
+                name="document_id",
+                type=SearchFieldDataType.String,
+                filterable=True,
+            ),
             SearchableField(
                 name="file_name",
+                type=SearchFieldDataType.String,
+                filterable=True,
+            ),
+            SimpleField(
+                name="folder_path",
+                type=SearchFieldDataType.String,
+                filterable=True,
+                facetable=True,
+            ),
+            SearchableField(
+                name="file_path",
                 type=SearchFieldDataType.String,
                 filterable=True,
             ),

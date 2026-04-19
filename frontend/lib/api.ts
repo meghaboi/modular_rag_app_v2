@@ -1,12 +1,27 @@
-export type UploadResponse = {
-  session_id: string;
+export type WorkspaceDocument = {
+  document_id: string;
   file_name: string;
+  folder_path: string;
+  file_path: string;
   chunk_count: number;
-  message: string;
+};
+
+export type SessionResponse = {
+  session_id: string;
+  workspace_name: string;
+  chunk_count: number;
+  document_count: number;
+  folders: string[];
+  documents: WorkspaceDocument[];
+  message?: string | null;
+  file_name?: string | null;
 };
 
 export type ContextChunk = {
+  document_id: string;
   file_name: string;
+  folder_path: string;
+  file_path: string;
   chunk_id: number;
   content: string;
   score?: number | null;
@@ -36,17 +51,17 @@ export type HealthResponse = {
   detail?: string;
 };
 
-export type SessionResponse = {
-  session_id: string;
-  file_name: string;
-  chunk_count: number;
+type UploadDocumentOptions = {
+  sessionId?: string;
+  workspaceName?: string;
+  folderPath?: string;
 };
 
-const AZURE_API_BASE_URL = "https://ca-rag-app-36972.azurewebsites.net";
+const DEFAULT_API_BASE_URL = "https://caragv2api36972.azurewebsites.net";
 const REQUEST_TIMEOUT_MS = 120_000;
 
 export const API_BASE_URL = normalizeApiBaseUrl(
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? AZURE_API_BASE_URL,
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL,
 );
 
 function normalizeApiBaseUrl(value: string): string {
@@ -83,7 +98,7 @@ async function request<T>(
     return parseResponse<T>(response);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("Azure API request timed out. Try again after the app wakes up.");
+      throw new Error("The API request timed out. Try again after the app wakes up.");
     }
     throw error;
   }
@@ -97,11 +112,56 @@ export async function getSession(sessionId: string): Promise<SessionResponse> {
   return request<SessionResponse>(`/api/sessions/${sessionId}`);
 }
 
-export async function uploadDocument(file: File): Promise<UploadResponse> {
+export async function createWorkspace(
+  workspaceName: string,
+): Promise<SessionResponse> {
+  const formData = new FormData();
+  formData.append("workspace_name", workspaceName);
+
+  return request<SessionResponse>("/api/sessions", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function createFolder(
+  sessionId: string,
+  folderPath: string,
+): Promise<SessionResponse> {
+  return request<SessionResponse>(`/api/sessions/${sessionId}/folders`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      folder_path: folderPath,
+    }),
+  });
+}
+
+export async function uploadDocument(
+  file: File,
+  options: UploadDocumentOptions = {},
+): Promise<SessionResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
-  return request<UploadResponse>("/api/sessions", {
+  if (options.workspaceName) {
+    formData.append("workspace_name", options.workspaceName);
+  }
+
+  if (options.folderPath) {
+    formData.append("folder_path", options.folderPath);
+  }
+
+  if (options.sessionId) {
+    return request<SessionResponse>(`/api/sessions/${options.sessionId}/documents`, {
+      method: "POST",
+      body: formData,
+    });
+  }
+
+  return request<SessionResponse>("/api/sessions", {
     method: "POST",
     body: formData,
   });
